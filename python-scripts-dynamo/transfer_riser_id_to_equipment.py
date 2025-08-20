@@ -107,50 +107,87 @@ def filter_pipes_by_system(doc, riser_id_param_name, systems=["CWS", "CWR"]):
 
 
 def map_pipes_to_rooms(pipes, rooms, transform):
-    """Create mapping of pipes to rooms."""
+    """Create mapping of pipes to rooms using multiple sampling points along vertical risers."""
     # Create a dictionary to store pipes by room
     pipes_by_room = {}
 
-    # Find which room each pipe is in
+    # Set sample points to the number of levels in the building
+    # Add 2 extra points to ensure we catch points between floors
+    SAMPLE_POINTS = len(rooms) + 2
+    print(f"Using {SAMPLE_POINTS} sample points based on {len(rooms)} building levels")
+
     for pipe in pipes:
         # Get the pipe curve
         curve = pipe.Location.Curve
-        # Get the midpoint of the pipe
-        pipe_point = curve.Evaluate(0.5, True)
-        transformed_point = transform.Inverse.OfPoint(pipe_point)
 
-        # Get pipe level
+        # Check if this is a vertical pipe (riser)
+        start_point = curve.GetEndPoint(0)
+        end_point = curve.GetEndPoint(1)
+        is_vertical = (
+            abs(end_point.Z - start_point.Z) > 5.0
+        )  # Adjust threshold as needed
+
+        # Points to check (for horizontal pipes, just use midpoint)
+        points_to_check = []
+
+        if is_vertical:
+            # Sample multiple points along the pipe - one for each level plus extras
+            for i in range(SAMPLE_POINTS):
+                param = i / (SAMPLE_POINTS - 1)  # Parameter from 0 to 1
+                point = curve.Evaluate(param, True)
+                points_to_check.append(point)
+            print(
+                f"Vertical pipe {pipe.Id} - checking {len(points_to_check)} points across {len(rooms)} levels"
+            )
+        else:
+            # For horizontal pipes, just use the midpoint
+            midpoint = curve.Evaluate(0.5, True)
+            points_to_check.append(midpoint)
+
+        # Check each point
         pipe_level_id = pipe.ReferenceLevel.Id
-        room_found = False
+        checked_rooms = set()  # Track rooms we've already added this pipe to
 
-        # First check rooms on the same level as the pipe
-        if pipe_level_id in rooms:
-            for room in rooms[pipe_level_id]:
-                if room.IsPointInRoom(transformed_point):
-                    room_id = room.Id.IntegerValue
-                    if room_id not in pipes_by_room:
-                        pipes_by_room[room_id] = []
-                    pipes_by_room[room_id].append(pipe)
-                    room_found = True
-                    break
+        for point in points_to_check:
+            transformed_point = transform.Inverse.OfPoint(point)
+            room_found = False
 
-        # If no room found on the same level, check other levels
-        if not room_found:
-            for level_id, level_rooms in rooms.items():
-                if level_id == pipe_level_id:
-                    continue  # Skip already checked level
-
-                for room in level_rooms:
-                    if room.IsPointInRoom(transformed_point):
+            # First check rooms on the same level as the pipe
+            if pipe_level_id in rooms:
+                for room in rooms[pipe_level_id]:
+                    if (
+                        room.IsPointInRoom(transformed_point)
+                        and room.Id.IntegerValue not in checked_rooms
+                    ):
                         room_id = room.Id.IntegerValue
                         if room_id not in pipes_by_room:
                             pipes_by_room[room_id] = []
                         pipes_by_room[room_id].append(pipe)
+                        checked_rooms.add(room_id)
                         room_found = True
                         break
 
-                if room_found:
-                    break
+            # If no room found, check other levels (relevant for vertical pipes)
+            if not room_found:
+                for level_id, level_rooms in rooms.items():
+                    if level_id == pipe_level_id:
+                        continue  # Skip already checked level
+
+                    for room in level_rooms:
+                        if (
+                            room.IsPointInRoom(transformed_point)
+                            and room.Id.IntegerValue not in checked_rooms
+                        ):
+                            room_id = room.Id.IntegerValue
+                            if room_id not in pipes_by_room:
+                                pipes_by_room[room_id] = []
+                            pipes_by_room[room_id].append(pipe)
+                            checked_rooms.add(room_id)
+                            room_found = True
+                            break
+
+                    if room_found:
+                        break
 
     print(f"Found pipes in {len(pipes_by_room)} rooms")
     return pipes_by_room
@@ -276,9 +313,11 @@ else:
 
     # Map pipes to rooms
     pipes_by_room = map_pipes_to_rooms(filtered_pipes, rooms_by_level, transform)
-    
+
     # Map equipment to rooms (new function to group equipment by room)
-    equipment_by_room = map_equipment_to_rooms(filtered_equipment, rooms_by_level, transform)
+    equipment_by_room = map_equipment_to_rooms(
+        filtered_equipment, rooms_by_level, transform
+    )
 
     # Stats for reporting
     updated_elements = []
@@ -291,9 +330,11 @@ else:
     TransactionManager.Instance.EnsureInTransaction(doc)
 
     # Process each room that has both equipment and pipes
-    rooms_with_both = set(pipes_by_room.keys()).intersection(set(equipment_by_room.keys()))
+    rooms_with_both = set(pipes_by_room.keys()).intersection(
+        set(equipment_by_room.keys())
+    )
     print(f"Found {len(rooms_with_both)} rooms with both equipment and pipes")
-    
+
     for room_id in rooms_with_both:
         # Get room object by searching through all rooms (could be optimized)
         room = None
@@ -304,32 +345,38 @@ else:
                     break
             if room:
                 break
-                
+
         if not room:
             print(f"Could not find room with ID {room_id}")
             continue
-            
+
         room_number = room.LookupParameter("Number").AsString()
         room_name = room.LookupParameter("Name").AsString()
         print(f"Processing room {room_number}: {room_name}")
-        
+
         # Get pipes in this room
         pipes_in_room = pipes_by_room[room_id]
-        
+
         # Prioritize CWS pipes over CWR pipes
         cws_pipes = [
-            p for p in pipes_in_room
-            if p.get_Parameter(BuiltInParameter.RBS_DUCT_PIPE_SYSTEM_ABBREVIATION_PARAM).AsString() == "CWS"
+            p
+            for p in pipes_in_room
+            if p.get_Parameter(
+                BuiltInParameter.RBS_DUCT_PIPE_SYSTEM_ABBREVIATION_PARAM
+            ).AsString()
+            == "CWS"
         ]
-        
+
         if cws_pipes:
             pipe = cws_pipes[0]
         else:
             pipe = pipes_in_room[0]
-            
+
         riser_id = pipe.LookupParameter(RISER_ID_PARAM).AsString()
-        system_abbr = pipe.get_Parameter(BuiltInParameter.RBS_DUCT_PIPE_SYSTEM_ABBREVIATION_PARAM).AsString()
-        
+        system_abbr = pipe.get_Parameter(
+            BuiltInParameter.RBS_DUCT_PIPE_SYSTEM_ABBREVIATION_PARAM
+        ).AsString()
+
         # Apply to all equipment in this room
         equipment_in_room = equipment_by_room[room_id]
         for eq in equipment_in_room:
@@ -337,25 +384,29 @@ else:
             if riser_id_param:
                 # Get current riser ID value from equipment (if any)
                 current_riser_id = riser_id_param.AsString()
-                
+
                 # Check if equipment already has a riser ID and if it matches the pipe's riser ID
                 if current_riser_id and current_riser_id != riser_id:
                     # Riser IDs don't match - set to "Riser ID not Equals"
                     riser_id_param.Set("Riser ID not Equals")
-                    print(f"Riser ID mismatch in room {room_number}: Equipment had '{current_riser_id}', pipe has '{riser_id}'. Set to 'Riser ID not Equals'")
+                    print(
+                        f"Riser ID mismatch in room {room_number}: Equipment had '{current_riser_id}', pipe has '{riser_id}'. Set to 'Riser ID not Equals'"
+                    )
                 else:
                     # Either no existing riser ID or they match - set to pipe's riser ID
                     riser_id_param.Set(riser_id)
-                    print(f"Set Riser ID '{riser_id}' from {system_abbr} pipe to equipment {eq.Id} in room {room_number}")
-                
+                    print(
+                        f"Set Riser ID '{riser_id}' from {system_abbr} pipe to equipment {eq.Id} in room {room_number}"
+                    )
+
                 updated_count += 1
                 updated_elements.append(eq)
             else:
                 print(f"Missing '{RISER_ID_PARAM}' parameter on equipment: {eq.Id}")
                 error_count += 1
-                
+
             processed_count += 1
-    
+
     # Also process equipment in rooms without pipes (mark as not found)
     rooms_with_eq_only = set(equipment_by_room.keys()) - set(pipes_by_room.keys())
     for room_id in rooms_with_eq_only:
@@ -368,10 +419,10 @@ else:
                     break
             if room:
                 break
-                
+
         if not room:
             continue
-            
+
         room_number = room.LookupParameter("Number").AsString()
         equipment_in_room = equipment_by_room[room_id]
         for eq in equipment_in_room:
