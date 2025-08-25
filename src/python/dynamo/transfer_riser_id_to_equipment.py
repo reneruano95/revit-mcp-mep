@@ -8,6 +8,7 @@ from RevitServices.Persistence import DocumentManager
 from RevitServices.Transactions import TransactionManager
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.DB.Plumbing import *
+from Autodesk.Revit.DB import LogicalOrFilter
 from Revit.Elements import *
 
 doc = DocumentManager.Instance.CurrentDBDocument
@@ -76,7 +77,7 @@ def filter_pipes_by_system(doc, riser_id_param_name, systems=["CWS", "CWR"]):
 
     # Combine system filters with OR if there are multiple systems
     if len(system_filters) > 1:
-        combined_filter = LogicalOrFilter(*system_filters)
+        combined_filter = LogicalOrFilter(system_filters)
     else:
         combined_filter = system_filters[0]
 
@@ -292,6 +293,7 @@ if not linked_doc:
         },
     }
     # Return early
+
 else:
     # Get all rooms from the linked model
     rooms = (

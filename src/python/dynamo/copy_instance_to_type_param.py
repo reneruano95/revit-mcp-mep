@@ -117,7 +117,7 @@ for type_id, type_elements in elements_by_type.items():
         failed_updates += 1
         continue
 
-    # Set the parameter value - FIX: Don't check return value, just try to set it
+    # Set the parameter value - Don't check return value, just try to set it
     try:
         target_param.Set(param_value)  # Set() is a void method, doesn't return a value
         print(f"Type {type_name}: Updated with value '{param_value}'")

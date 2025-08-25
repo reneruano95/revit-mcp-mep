@@ -33,7 +33,7 @@ all_equipment = (
 
 print(f"Found {len(all_equipment)} total mechanical equipment elements")
 
-# FIXED: Use Level directly since we already imported * from Autodesk.Revit.DB
+# Use Level directly since we already imported * from Autodesk.Revit.DB
 all_levels = FilteredElementCollector(doc).OfClass(DBLevel).ToElements()
 level_map = {}
 

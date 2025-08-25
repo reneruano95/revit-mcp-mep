@@ -6,6 +6,59 @@ Revit MCP for MEP defines an open standard that enables AI assistants to underst
 
 This document provides structure, components, and implementation guidelines for a Revit MCP server specialized for MEP workflows.
 
+## Project Structure
+
+```
+/revit-mcp-mep/
+├── src/
+│   ├── python/                     # Python code
+│   │   ├── dynamo/                 # Dynamo scripts
+│   │   ├── revit/                  # Direct Revit API scripts
+│   │   ├── utils/                  # Utility functions
+│   │   └── services/               # Service modules
+│   └── dynamo-graphs/              # Dynamo graph files
+│
+├── resources/
+│   ├── schedules/                  # Equipment schedules
+│   │   ├── hvac/
+│   │   │   ├── wshp/               # Water source heat pumps
+│   │   │   ├── ahu/                # Air handling units
+│   │   │   └── ...
+│   │   ├── plumbing/
+│   │   └── electrical/
+│   ├── templates/                  # Template files
+│   └── config/                     # Configuration files
+│
+├── tests/                          # Test code
+│   ├── unit/
+│   ├── integration/
+│   └── fixtures/                   # Test data
+│
+├── docs/                           # Documentation
+│   ├── guides/
+│   └── api/
+│
+└── tools/                          # Helper scripts and tools
+```
+
+## Data Resources
+
+### WSHP (Water Source Heat Pump) Schedule
+
+The repository includes a comprehensive WSHP schedule in JSON format with detailed specifications for various heat pump models:
+
+- Equipment tags (WSHP-A through WSHP-G)
+- Model information (WSCV007, WSCV009, WSCV012, WSCV015, WSCV019, WSCV024, WSCV030)
+- Performance metrics:
+  - Airflow and static pressure
+  - Fluid flow and type
+  - Cooling performance (temperatures, capacities, EER)
+  - Heating performance (temperatures, capacities, COP)
+  - Electrical specifications (voltage, current ratings)
+  - Water pressure drop calculations
+
+This structured data serves as a resource for equipment schedules in Revit projects and can be imported via the API operations detailed in this document.
+
 ## Table of Contents
 
 1. [Introduction](#1-introduction)
@@ -29,7 +82,7 @@ Provide a standardized, discipline-aware interface for exposing MEP system data 
 
 ### 1.2 Background
 
-Built on Anthropic’s Model Context Protocol (MCP), this specialization maps MEP entities and workflows to an AI-accessible API while retaining strong controls and audit trails.
+Built on Anthropic's Model Context Protocol (MCP), this specialization maps MEP entities and workflows to an AI-accessible API while retaining strong controls and audit trails.
 
 ### 1.3 Benefits
 
@@ -58,9 +111,9 @@ Built on Anthropic’s Model Context Protocol (MCP), this specialization maps ME
 
 ### 2.2 Communication Flow
 
-1) Host -> Client -> Server  
-2) Server -> Revit MEP API (transactions)  
-3) Responses flow back to Host
+1. Host -> Client -> Server
+2. Server -> Revit MEP API (transactions)
+3. Responses flow back to Host
 
 ### 2.3 Key Components
 
@@ -71,7 +124,7 @@ Built on Anthropic’s Model Context Protocol (MCP), this specialization maps ME
 
 ## 3. MEP Data Models and Schemas
 
-Note: Units are SI by default unless specified (length: meters, diameter: meters, flow: L/s, pressure: Pa, power: W). Include a “units” block when using other units.
+Note: Units are SI by default unless specified (length: meters, diameter: meters, flow: L/s, pressure: Pa, power: W). Include a "units" block when using other units.
 
 ### 3.1 Connector
 
@@ -90,10 +143,10 @@ Note: Units are SI by default unless specified (length: meters, diameter: meters
   "systemType": "SupplyAir|ReturnAir|ExhaustAir|HydronicSupply|HydronicReturn|Sanitary|DomesticCold|DomesticHot|Power|Data",
   "direction": "In|Out|Bidirectional",
   "coordinateSystem": {
-    "origin": {"x": 10.0, "y": 2.0, "z": 3.2},
-    "basisX": {"x": 1, "y": 0, "z": 0},
-    "basisY": {"x": 0, "y": 1, "z": 0},
-    "basisZ": {"x": 0, "y": 0, "z": 1}
+    "origin": { "x": 10.0, "y": 2.0, "z": 3.2 },
+    "basisX": { "x": 1, "y": 0, "z": 0 },
+    "basisY": { "x": 0, "y": 1, "z": 0 },
+    "basisZ": { "x": 0, "y": 0, "z": 1 }
   }
 }
 ```
@@ -107,17 +160,17 @@ Note: Units are SI by default unless specified (length: meters, diameter: meters
   "typeId": "300123",
   "systemId": "sys-001",
   "curve": {
-    "start": {"x": 0, "y": 0, "z": 3.0},
-    "end": {"x": 5.0, "y": 0, "z": 3.0}
+    "start": { "x": 0, "y": 0, "z": 3.0 },
+    "end": { "x": 5.0, "y": 0, "z": 3.0 }
   },
   "shape": "Round|Rectangular",
   "diameter": 0.25,
   "width": 0.45,
   "height": 0.3,
   "slope": 0.01,
-  "insulation": {"thickness": 0.025, "material": "Fiberglass"},
-  "lining": {"thickness": 0.013, "material": "Acoustic"},
-  "parameters": {"Comments": "Main supply"}
+  "insulation": { "thickness": 0.025, "material": "Fiberglass" },
+  "lining": { "thickness": 0.013, "material": "Acoustic" },
+  "parameters": { "Comments": "Main supply" }
 }
 ```
 
@@ -131,7 +184,7 @@ Note: Units are SI by default unless specified (length: meters, diameter: meters
   "systemId": "sys-001",
   "fittingType": "Elbow|Tee|Cross|Transition|Tap|Union",
   "connectors": ["c-1", "c-2", "c-3"],
-  "parameters": {"Angle": 90, "Radius": 0.3}
+  "parameters": { "Angle": 90, "Radius": 0.3 }
 }
 ```
 
@@ -195,7 +248,11 @@ Note: Units are SI by default unless specified (length: meters, diameter: meters
   "level": "Level 2",
   "area": 42.0,
   "volume": 126.0,
-  "environment": {"coolingLoad": 5400, "heatingLoad": 3800, "ventilation": 0.15}
+  "environment": {
+    "coolingLoad": 5400,
+    "heatingLoad": 3800,
+    "ventilation": 0.15
+  }
 }
 ```
 
@@ -215,6 +272,7 @@ Operations return { success, result, message } envelopes. All modification endpo
 - GetRoutingPreferences: for a domain/type
 
 Example:
+
 ```json
 {
   "operation": "GetSystem",
@@ -236,6 +294,7 @@ Example:
 - RebuildSystem: recompute connections/handedness/flow direction
 
 Example:
+
 ```json
 {
   "operation": "RoutePath",
@@ -248,7 +307,7 @@ Example:
       "maxVelocity": 7.5,
       "maxPressureDropPerM": 2.0,
       "avoidCategories": ["StructuralFraming"],
-      "clearances": {"min": 0.05}
+      "clearances": { "min": 0.05 }
     }
   }
 }
@@ -265,6 +324,7 @@ Example:
 - ElectricalLoadSummary: connected vs demand
 
 Example:
+
 ```json
 {
   "operation": "ValidateConnectivity",
@@ -282,13 +342,14 @@ Example:
 - PlacePanelSchedules: electrical panel schedule views
 
 Example:
+
 ```json
 {
   "operation": "GenerateSchedules",
   "parameters": {
     "categories": ["Ducts", "MechanicalEquipment"],
     "fields": ["Type", "Length", "Diameter", "Airflow"],
-    "filters": [{"field": "Level", "operator": "equals", "value": "Level 2"}],
+    "filters": [{ "field": "Level", "operator": "equals", "value": "Level 2" }],
     "name": "Level 2 HVAC Schedule"
   }
 }
@@ -367,12 +428,14 @@ Example:
 ### 10.1 Server Setup (Windows/Revit)
 
 Prereqs:
+
 - Visual Studio 2022+
 - .NET Framework 4.8 or .NET 6+ (with Revit-compatible shim)
 - Revit API SDK
 - MCP SDK for .NET
 
 Project structure:
+
 ```
 RevitMCPMEPServer/
 ├── Core/
@@ -391,6 +454,7 @@ RevitMCPMEPServer/
 ```
 
 Example: GetSystem endpoint outline
+
 ```csharp
 // Pseudocode: Query a system and map to schema
 public EndpointResponse Execute(EndpointRequest req, RevitMEPConnector conn)
@@ -404,6 +468,7 @@ public EndpointResponse Execute(EndpointRequest req, RevitMEPConnector conn)
 ```
 
 Error patterns:
+
 - NoRouteFound, ConnectorMismatch, InvalidSystemType, TypeNotFound, ClearanceViolation
 
 ### 10.2 Client (Cross-Platform)
@@ -420,9 +485,10 @@ A Python MCP client can be developed/tested in this container to call a Windows-
 
 ### 11.1 HVAC: Route and Size a Branch
 
-User: “Connect VAV-03 to SA main with round duct, max velocity 7.5 m/s.”
+User: "Connect VAV-03 to SA main with round duct, max velocity 7.5 m/s."
 
 Request:
+
 ```json
 {
   "operation": "RoutePath",
@@ -430,15 +496,21 @@ Request:
     "fromConnectorId": "c-SA-main-near",
     "toConnectorId": "c-VAV-03-in",
     "domain": "Mechanical",
-    "rules": {"preferredShape": "Round", "maxVelocity": 7.5}
+    "rules": { "preferredShape": "Round", "maxVelocity": 7.5 }
   }
 }
 ```
+
 Followed by:
+
 ```json
 {
   "operation": "SizeSystem",
-  "parameters": {"systemId": "sys-SA-L2", "method": "EqualFriction", "target": {"friction": 0.8}}
+  "parameters": {
+    "systemId": "sys-SA-L2",
+    "method": "EqualFriction",
+    "target": { "friction": 0.8 }
+  }
 }
 ```
 
@@ -448,18 +520,20 @@ Followed by:
 {
   "operation": "CreatePipe",
   "parameters": {
-    "start": {"x": 10, "y": 3, "z": 2.8},
-    "end": {"x": 6, "y": 3, "z": 2.7},
+    "start": { "x": 10, "y": 3, "z": 2.8 },
+    "end": { "x": 6, "y": 3, "z": 2.7 },
     "systemType": "Sanitary",
     "typeId": "pipeType-PVC-100"
   }
 }
 ```
+
 Then:
+
 ```json
 {
   "operation": "SetSlope",
-  "parameters": {"elementId": "567890", "slope": 0.02}
+  "parameters": { "elementId": "567890", "slope": 0.02 }
 }
 ```
 
@@ -468,9 +542,10 @@ Then:
 ```json
 {
   "operation": "GetCircuit",
-  "parameters": {"circuitId": "cir-101"}
+  "parameters": { "circuitId": "cir-101" }
 }
 ```
+
 ```json
 {
   "operation": "GenerateSchedules",
@@ -487,20 +562,44 @@ Then:
 ```json
 {
   "operation": "ValidateConnectivity",
-  "parameters": {"systemId": "sys-001", "reportOpenEnds": true}
+  "parameters": { "systemId": "sys-001", "reportOpenEnds": true }
 }
 ```
+
 ```json
 {
   "operation": "CheckInterference",
-  "parameters": {"categoriesA": ["Ducts"], "categoriesB": ["StructuralFraming"], "tolerance": 0.01}
+  "parameters": {
+    "categoriesA": ["Ducts"],
+    "categoriesB": ["StructuralFraming"],
+    "tolerance": 0.01
+  }
+}
+```
+
+### 11.5 Example: Working with WSHP Schedules
+
+```json
+{
+  "operation": "ImportMEPData",
+  "parameters": {
+    "source": "/resources/schedules/hvac/wshp/residential-WSHP-schedule-cleaner.json",
+    "targetCategory": "MechanicalEquipment",
+    "mappings": {
+      "tag": "Mark",
+      "model": "Type",
+      "cooling.total_btuh": "Cooling Capacity",
+      "heating.total_btuh": "Heating Capacity",
+      "airflow_cfm": "Airflow"
+    }
+  }
 }
 ```
 
 ## 12. References
 
 - Model Context Protocol: https://modelcontextprotocol.io/
-- Revit API Developer’s Guide: https://www.autodesk.com/developer-network/platform-technologies/revit
+- Revit API Developer's Guide: https://www.autodesk.com/developer-network/platform-technologies/revit
 - Revit API Namespaces:
   - Mechanical: Autodesk.Revit.DB.Mechanical
   - Plumbing: Autodesk.Revit.DB.Plumbing

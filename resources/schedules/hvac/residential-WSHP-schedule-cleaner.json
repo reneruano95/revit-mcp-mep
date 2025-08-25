@@ -1,0 +1,324 @@
+[
+  {
+    "tag": "WSHP-A",
+    "qty": 1,
+    "model": "WSCV007",
+    "capacity": "FULL",
+    "airflow_cfm": 252,
+    "external_static_pressure_inh2o": 0.29,
+    "fluid_flow_gpm": 1.3,
+    "fluid_type": "Water",
+    "antifreeze_(pct)": 0,
+    "cooling": {
+      "ewt_f": 87,
+      "lwt_f": 99.1,
+      "edb_f": 75,
+      "ewb_f": 63,
+      "ldb_f": 59.2,
+      "lwb_f": 54.5,
+      "total_btuh": 6157,
+      "sensible_btuh": 4316,
+      "heat_of_rejection_btuh": 7886,
+      "eer_(design)": 12.2,
+      "eer_(ahri)": 15.2
+    },
+    "heating": {
+      "ewt_f": 70,
+      "lwt_f": 59.8,
+      "edb_f": 70,
+      "ldb_f": 100.8,
+      "total_btuh": 8425,
+      "heat_of_absorption_btuh": 6603,
+      "cop_(design)": 4.6,
+      "cop_(ahri)": 5.0
+    },
+    "electrical": {
+      "voltage": "208-230/60/1",
+      "rla": 2.9,
+      "fla": 3.8,
+      "mca_a": 4.5,
+      "max_fuse": 15
+    },
+    "water_pressure_drop_calculation": {
+      "base_cool_wpd_(ft_h₂o)": 1.09,
+      "motorized_valve_wpd_(ft_h₂o)": 0.24,
+      "total_cool_wpd_(ft_h₂o)": 1.09
+    }
+  },
+  {
+    "tag": "WSHP-B",
+    "qty": 1,
+    "model": "WSCV009",
+    "capacity": "FULL",
+    "airflow_cfm": 300,
+    "external_static_pressure_inh2o": 0.29,
+    "fluid_flow_gpm": 2.0,
+    "fluid_type": "Water",
+    "antifreeze_(pct)": 0,
+    "cooling": {
+      "ewt_f": 87,
+      "lwt_f": 99.1,
+      "edb_f": 75,
+      "ewb_f": 63,
+      "ldb_f": 56.8,
+      "lwb_f": 51.9,
+      "total_btuh": 9319,
+      "sensible_btuh": 5925,
+      "heat_of_rejection_btuh": 12074,
+      "eer_(design)": 11.5,
+      "eer_(ahri)": 13.7
+    },
+    "heating": {
+      "ewt_f": 70,
+      "lwt_f": 59.8,
+      "edb_f": 70,
+      "ldb_f": 110.3,
+      "total_btuh": 13143,
+      "heat_of_absorption_btuh": 10177,
+      "cop_(design)": 4.4,
+      "cop_(ahri)": 4.4
+    },
+    "electrical": {
+      "voltage": "208-230/60/1",
+      "rla": 4.3,
+      "fla": 5.2,
+      "mca_a": 6.3,
+      "max_fuse": 15
+    },
+    "water_pressure_drop_calculation": {
+      "base_cool_wpd_(ft_h₂o)": 2.17,
+      "motorized_valve_wpd_(ft_h₂o)": 0.58,
+      "total_cool_wpd_(ft_h₂o)": 2.17
+    }
+  },
+  {
+    "tag": "WSHP-C",
+    "qty": 1,
+    "model": "WSCV012",
+    "capacity": "FULL",
+    "airflow_cfm": 402,
+    "external_static_pressure_inh2o": 0.22,
+    "fluid_flow_gpm": 2.5,
+    "fluid_type": "Water",
+    "antifreeze_(pct)": 0,
+    "cooling": {
+      "ewt_f": 87,
+      "lwt_f": 99.0,
+      "edb_f": 75,
+      "ewb_f": 63,
+      "ldb_f": 56.9,
+      "lwb_f": 52.9,
+      "total_btuh": 11476,
+      "sensible_btuh": 7893,
+      "heat_of_rejection_btuh": 14970,
+      "eer_(design)": 11.2,
+      "eer_(ahri)": 12.8
+    },
+    "heating": {
+      "ewt_f": 70,
+      "lwt_f": 59.6,
+      "edb_f": 70,
+      "ldb_f": 109.1,
+      "total_btuh": 17090,
+      "heat_of_absorption_btuh": 12970,
+      "cop_(design)": 4.1,
+      "cop_(ahri)": 4.4
+    },
+    "electrical": {
+      "voltage": "208-230/60/1",
+      "rla": 5.6,
+      "fla": 6.5,
+      "mca_a": 7.9,
+      "max_fuse": 15
+    },
+    "water_pressure_drop_calculation": {
+      "base_cool_wpd_(ft_h₂o)": 3.35,
+      "motorized_valve_wpd_(ft_h₂o)": 0.9,
+      "total_cool_wpd_(ft_h₂o)": 3.35
+    }
+  },
+  {
+    "tag": "WSHP-D",
+    "qty": 1,
+    "model": "WSCV015",
+    "capacity": "FULL",
+    "airflow_cfm": 502,
+    "external_static_pressure_inh2o": 0.1,
+    "fluid_flow_gpm": 2.85,
+    "fluid_type": "Water",
+    "antifreeze_(pct)": 0,
+    "cooling": {
+      "ewt_f": 87,
+      "lwt_f": 99.0,
+      "edb_f": 75,
+      "ewb_f": 63,
+      "ldb_f": 56.7,
+      "lwb_f": 53.5,
+      "total_btuh": 13593,
+      "sensible_btuh": 9989,
+      "heat_of_rejection_btuh": 17121,
+      "eer_(design)": 13.2,
+      "eer_(ahri)": 16.6
+    },
+    "heating": {
+      "ewt_f": 70,
+      "lwt_f": 59.5,
+      "edb_f": 70,
+      "ldb_f": 104.8,
+      "total_btuh": 18960,
+      "heat_of_absorption_btuh": 14903,
+      "cop_(design)": 4.7,
+      "cop_(ahri)": 5.0
+    },
+    "electrical": {
+      "voltage": "208-230/60/1",
+      "rla": 5.5,
+      "fla": 8.3,
+      "mca_a": 9.7,
+      "max_fuse": 15
+    },
+    "water_pressure_drop_calculation": {
+      "base_cool_wpd_(ft_h₂o)": 5.52,
+      "motorized_valve_wpd_(ft_h₂o)": 1.17,
+      "total_cool_wpd_(ft_h₂o)": 5.52
+    }
+  },
+  {
+    "tag": "WSHP-E",
+    "qty": 1,
+    "model": "WSCV019",
+    "capacity": "FULL",
+    "airflow_cfm": 602,
+    "external_static_pressure_inh2o": 0.1,
+    "fluid_flow_gpm": 3.6,
+    "fluid_type": "Water",
+    "antifreeze_(pct)": 0,
+    "cooling": {
+      "ewt_f": 87,
+      "lwt_f": 99.0,
+      "edb_f": 75,
+      "ewb_f": 63,
+      "ldb_f": 57.5,
+      "lwb_f": 53.1,
+      "total_btuh": 16885,
+      "sensible_btuh": 11432,
+      "heat_of_rejection_btuh": 21539,
+      "eer_(design)": 12.4,
+      "eer_(ahri)": 15.1
+    },
+    "heating": {
+      "ewt_f": 70,
+      "lwt_f": 60.3,
+      "edb_f": 70,
+      "ldb_f": 104.6,
+      "total_btuh": 22620,
+      "heat_of_absorption_btuh": 17401,
+      "cop_(design)": 4.3,
+      "cop_(ahri)": 4.6
+    },
+    "electrical": {
+      "voltage": "208-230/60/1",
+      "rla": 7.2,
+      "fla": 10.0,
+      "mca_a": 11.8,
+      "max_fuse": 15
+    },
+    "water_pressure_drop_calculation": {
+      "base_cool_wpd_(ft_h₂o)": 7.69,
+      "motorized_valve_wpd_(ft_h₂o)": 1.87,
+      "total_cool_wpd_(ft_h₂o)": 7.69
+    }
+  },
+  {
+    "tag": "WSHP-F",
+    "qty": 1,
+    "model": "WSCV024",
+    "capacity": "FULL",
+    "airflow_cfm": 800,
+    "external_static_pressure_inh2o": 0.1,
+    "fluid_flow_gpm": 4.4,
+    "fluid_type": "Water",
+    "antifreeze_(pct)": 0,
+    "cooling": {
+      "ewt_f": 87,
+      "lwt_f": 98.9,
+      "edb_f": 75,
+      "ewb_f": 63,
+      "ldb_f": 57.4,
+      "lwb_f": 53.9,
+      "total_btuh": 20674,
+      "sensible_btuh": 15276,
+      "heat_of_rejection_btuh": 26197,
+      "eer_(design)": 12.8,
+      "eer_(ahri)": 15.2
+    },
+    "heating": {
+      "ewt_f": 70,
+      "lwt_f": 59.9,
+      "edb_f": 70,
+      "ldb_f": 102.2,
+      "total_btuh": 27943,
+      "heat_of_absorption_btuh": 22309,
+      "cop_(design)": 5.0,
+      "cop_(ahri)": 5.0
+    },
+    "electrical": {
+      "voltage": "208-230/60/1",
+      "rla": 10.3,
+      "fla": 13.1,
+      "mca_a": 15.7,
+      "max_fuse": 25
+    },
+    "water_pressure_drop_calculation": {
+      "base_cool_wpd_(ft_h₂o)": 5.94,
+      "motorized_valve_wpd_(ft_h₂o)": 0.79,
+      "total_cool_wpd_(ft_h₂o)": 5.94
+    }
+  },
+  {
+    "tag": "WSHP-G",
+    "qty": 1,
+    "model": "WSCV030",
+    "capacity": "FULL",
+    "airflow_cfm": 1001,
+    "external_static_pressure_inh2o": 0.09,
+    "fluid_flow_gpm": 5.3,
+    "fluid_type": "Water",
+    "antifreeze_(pct)": 0,
+    "cooling": {
+      "ewt_f": 87,
+      "lwt_f": 99.0,
+      "edb_f": 75,
+      "ewb_f": 63,
+      "ldb_f": 57.6,
+      "lwb_f": 54.2,
+      "total_btuh": 25072,
+      "sensible_btuh": 18863,
+      "heat_of_rejection_btuh": 31729,
+      "eer_(design)": 12.9,
+      "eer_(ahri)": 15.4
+    },
+    "heating": {
+      "ewt_f": 70,
+      "lwt_f": 60.0,
+      "edb_f": 70,
+      "ldb_f": 101.1,
+      "total_btuh": 33767,
+      "heat_of_absorption_btuh": 26488,
+      "cop_(design)": 4.6,
+      "cop_(ahri)": 4.9
+    },
+    "electrical": {
+      "voltage": "208-230/60/1",
+      "rla": 11.5,
+      "fla": 15.6,
+      "mca_a": 18.5,
+      "max_fuse": 25
+    },
+    "water_pressure_drop_calculation": {
+      "base_cool_wpd_(ft_h₂o)": 12.77,
+      "motorized_valve_wpd_(ft_h₂o)": 1.15,
+      "total_cool_wpd_(ft_h₂o)": 12.77
+    }
+  }
+]

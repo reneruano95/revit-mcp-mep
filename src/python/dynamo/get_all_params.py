@@ -37,7 +37,7 @@ if mech_equipment:
     for param in parameters:
         # Get parameter details
         param_name = param.Definition.Name
-        # Fix: Use dictionary to map integer to string name
+        # Use dictionary to map integer to string name
         param_storage_type = storage_type_names.get(
             param.StorageType, f"Unknown({param.StorageType})"
         )
