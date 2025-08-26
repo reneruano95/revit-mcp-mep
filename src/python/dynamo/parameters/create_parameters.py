@@ -21,7 +21,7 @@ try:
     import os
 
     sys.path.append(os.path.dirname(__file__))
-    from parameter_creator import ParameterCreator, create_single_parameter
+    from python.dynamo.parameters.parameter_creator import ParameterCreator, create_single_parameter
 
     MODULE_AVAILABLE = True
 except ImportError:
@@ -68,7 +68,6 @@ class CustomParameterManager:
         scope = config.get("scope", "instance").lower()
         categories = config.get("categories", ["mechanical_equipment"])
         group_name = config.get("group", "JAL_Parameters")
-        description = config.get("description", "")
 
         # Ensure categories is a list
         if isinstance(categories, str):
@@ -193,29 +192,6 @@ class CustomParameterManager:
                     "scope": "type",
                     "categories": ["all_mep"],
                     "description": "Manufacturer model number",
-                },
-            ],
-            "maintenance_parameters": [
-                {
-                    "name": "JAL_Installation Date",
-                    "type": "text",
-                    "scope": "instance",
-                    "categories": ["all_mep"],
-                    "description": "Date equipment was installed",
-                },
-                {
-                    "name": "JAL_Last Maintenance",
-                    "type": "text",
-                    "scope": "instance",
-                    "categories": ["all_mep"],
-                    "description": "Date of last maintenance",
-                },
-                {
-                    "name": "JAL_Maintenance Interval",
-                    "type": "integer",
-                    "scope": "type",
-                    "categories": ["all_mep"],
-                    "description": "Maintenance interval in months",
                 },
             ],
             "electrical_parameters": [

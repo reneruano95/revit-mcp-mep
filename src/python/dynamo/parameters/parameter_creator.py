@@ -1,7 +1,7 @@
 """
 Revit Parameter Creator Module
 Creates individual parameters with configurable name and scope (instance/type)
-Compatible with Revit 2022+ using modern ForgeTypeId API
+Compatible with Revit 2024+
 """
 
 import clr
@@ -37,7 +37,6 @@ class ParameterCreator:
             "electrical": BuiltInParameterGroup.PG_ELECTRICAL,
             "plumbing": BuiltInParameterGroup.PG_PLUMBING,
             "dimensions": BuiltInParameterGroup.PG_GEOMETRY,
-            "phasing": BuiltInParameterGroup.PG_PHASING,
             "construction": BuiltInParameterGroup.PG_CONSTRUCTION,
             "graphics": BuiltInParameterGroup.PG_GRAPHICS,
         }
