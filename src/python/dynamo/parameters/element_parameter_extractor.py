@@ -77,13 +77,56 @@ class ElementParameterExtractor:
         return param_list
 
     def get_category_parameters(
-        self, category: BuiltInCategory, param_filter=ParameterTypeFilter.TYPE
+        self, category: BuiltInCategory, param_filter=ParameterTypeFilter.ALL
     ) -> Optional[List[Dict[str, Any]]]:
         """Get parameters from first element of specified category."""
 
         if not self.doc:
             print("No document available")
             return None
+
+        if param_filter == ParameterTypeFilter.ALL:
+            # Get both instance and type parameters
+            print("=== COLLECTING INSTANCE PARAMETERS ===")
+            instance_params = self._get_filtered_parameters(
+                category, ParameterTypeFilter.INSTANCE
+            )
+
+            print("\n=== COLLECTING TYPE PARAMETERS ===")
+            type_params = self._get_filtered_parameters(
+                category, ParameterTypeFilter.TYPE
+            )
+
+            # Combine results
+            all_params = []
+            if instance_params:
+                for param in instance_params:
+                    param["parameter_scope"] = "instance"
+                    all_params.append(param)
+
+            if type_params:
+                for param in type_params:
+                    param["parameter_scope"] = "type"
+                    all_params.append(param)
+
+            # Sort by parameter name for easier reading
+            all_params.sort(key=lambda x: (x["parameter_scope"], x["name"]))
+
+            print(f"\nCombined results: {len(all_params)} total parameters")
+            print(
+                f"Instance parameters: {len(instance_params) if instance_params else 0}"
+            )
+            print(f"Type parameters: {len(type_params) if type_params else 0}")
+
+            return all_params
+        else:
+            # Single filter mode
+            return self._get_filtered_parameters(category, param_filter)
+
+    def _get_filtered_parameters(
+        self, category: BuiltInCategory, param_filter: ParameterTypeFilter
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Helper method to get parameters with a specific filter."""
 
         # Create a filtered element collector
         collector = FilteredElementCollector(self.doc)
@@ -92,10 +135,12 @@ class ElementParameterExtractor:
         # Apply parameter type filter
         if param_filter == ParameterTypeFilter.TYPE:
             collector.WhereElementIsElementType()
+            filter_name = "types"
         elif param_filter == ParameterTypeFilter.INSTANCE:
             collector.WhereElementIsNotElementType()
-        elif param_filter == ParameterTypeFilter.ALL:
-            pass  # No filter applied, get both types and instances
+            filter_name = "instances"
+        else:
+            filter_name = "all"
 
         # Get the first element
         elements = list(collector)
@@ -104,14 +149,14 @@ class ElementParameterExtractor:
             category_name = (
                 category.ToString() if hasattr(category, "ToString") else str(category)
             )
-            print(f"No elements found in category: {category_name}")
+            print(f"No {filter_name} found in category: {category_name}")
             return None
 
         first_element = elements[0]
-
         element_type_name = first_element.GetType().Name
+
         print(
-            f"Found {len(elements)} elements. Analyzing first element: {first_element.Id} (Type: {element_type_name})"
+            f"Found {len(elements)} {filter_name}. Analyzing first element: {first_element.Id} (Type: {element_type_name})"
         )
 
         # Extract parameters from the first element
@@ -119,13 +164,13 @@ class ElementParameterExtractor:
 
         # Print results
         if param_list:
-            print(f"\nParameters for element {first_element.Id}:")
+            print(f"\nParameters for {filter_name} element {first_element.Id}:")
             for i, param in enumerate(param_list, 1):
                 print(
                     f"{i}. {param['name']} ({param['storage_type']}): {param['value']}"
                 )
         else:
-            print("No parameters found")
+            print(f"No parameters found for {filter_name}")
 
         return param_list
 
