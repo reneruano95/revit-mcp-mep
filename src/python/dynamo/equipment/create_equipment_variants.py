@@ -187,15 +187,23 @@ class MechanicalEquipmentVariantCreator:
                 BuiltInCategory.OST_MechanicalEquipment
             )
 
+            print(
+                f"Found {family_symbols.GetElementCount()} mechanical equipment types"
+            )
+
             equipment_info = []
             for symbol in family_symbols:
                 info = {
-                    "symbol_name": symbol.Name,
-                    "family_name": symbol.Family.Name if symbol.Family else "Unknown",
-                    "element_id": symbol.Id.IntegerValue,
-                    "is_active": symbol.IsActive,
+                    "family_name": (
+                        symbol.FamilyName
+                        if hasattr(symbol, "FamilyName")
+                        else "No Family Name"
+                    ),
+                    "element_id": symbol.Id.IntegerValue if symbol.Id else "No ID",
                 }
                 equipment_info.append(info)
+
+            print(f"Collected equipment info for {len(equipment_info)} types")
 
             return equipment_info
 
@@ -491,7 +499,7 @@ class MechanicalEquipmentVariantCreator:
         print(f"{'='*60}")
 
 
-def safe_main():
+def main():
     """
     Safe main function with comprehensive error handling for Dynamo
     """
@@ -639,13 +647,12 @@ def list_equipment_safe() -> Dict:
 
 # Dynamo compatibility with better error handling
 try:
-    if __name__ == "__main__" or "OUT" in globals():
-        # Use safe main function
-        OUT = safe_main()
+    # Use safe main function
+    OUT = list_equipment_safe()
 
-        # Also provide the result in a format Dynamo can handle
-        if OUT is None:
-            OUT = {"success": False, "message": "Script returned None"}
+    # Also provide the result in a format Dynamo can handle
+    if OUT is None:
+        OUT = {"success": False, "message": "Script returned None"}
 
 except Exception as e:
     OUT = {"success": False, "message": f"Script execution error: {e}", "error": str(e)}
