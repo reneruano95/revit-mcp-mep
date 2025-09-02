@@ -192,43 +192,6 @@ class MechanicalEquipmentVariantCreator:
             print(f"Error getting equipment types: {e}")
             return []
 
-    def list_all_mechanical_equipment_families(self) -> List[Dict]:
-        """
-        List all mechanical equipment family symbols with basic info
-
-        Returns:
-            List of equipment family info dictionaries
-        """
-        try:
-            collector = FilteredElementCollector(self.doc)
-            family_symbols = collector.OfClass(FamilySymbol).OfCategory(
-                BuiltInCategory.OST_MechanicalEquipment
-            )
-
-            print(
-                f"Found {family_symbols.GetElementCount()} mechanical equipment types"
-            )
-
-            equipment_info = []
-            for symbol in family_symbols:
-                info = {
-                    "family_name": (
-                        symbol.FamilyName
-                        if hasattr(symbol, "FamilyName")
-                        else "No Family Name"
-                    ),
-                    "element_id": symbol.Id.IntegerValue if symbol.Id else "No ID",
-                }
-                equipment_info.append(info)
-
-            print(f"Collected equipment info for {len(equipment_info)} types")
-
-            return equipment_info
-
-        except Exception as e:
-            print(f"Error listing equipment: {e}")
-            return []
-
     def create_equipment_variant(
         self, base_symbol: FamilySymbol, variant_config: Dict
     ) -> Dict:
@@ -721,7 +684,7 @@ try:
     # OUT = check_family_parameters_safe("hvac_schematic-box")
 
     creator = MechanicalEquipmentVariantCreator()
-    OUT = creator.list_all_mechanical_equipment_families()
+    OUT = creator.get_all_mechanical_equipment_types()
 
     # Also provide the result in a format Dynamo can handle
     if OUT is None:
