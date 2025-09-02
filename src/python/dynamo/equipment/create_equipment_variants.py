@@ -37,17 +37,24 @@ class MechanicalEquipmentVariantCreator:
 
             self.created_types = []
             self.failed_types = []
-            self.dimension_parameters = ["JAL_Height", "JAL_Width", "JAL_Length"]
+            self.dimension_parameters = [
+                "JAL_Height",
+                "JAL_Width",
+                "JAL_Length",
+                "Height",
+                "Width",
+                "Length",
+            ]
 
         except Exception as e:
             raise Exception(f"Error initializing creator: {e}")
 
-    def check_family_parameters(self, symbol: FamilySymbol) -> Dict:
+    def check_family_parameters(self, equipment_family_symbol: FamilySymbol) -> Dict:
         """
         Check which dimension parameters exist in the family
 
         Args:
-            symbol: FamilySymbol to check
+            equipment_family_symbol: FamilySymbol to check
 
         Returns:
             Dictionary with parameter availability
@@ -56,18 +63,45 @@ class MechanicalEquipmentVariantCreator:
             param_status = {
                 "available_parameters": [],
                 "missing_parameters": [],
-                "family_name": symbol.Family.Name if symbol.Family else "Unknown",
+                "family_name": (
+                    equipment_family_symbol.Family.Name
+                    if equipment_family_symbol.Family
+                    else "Unknown"
+                ),
             }
 
             for param_name in self.dimension_parameters:
-                param = symbol.LookupParameter(param_name)
+                param = equipment_family_symbol.LookupParameter(param_name)
                 if param:
+                    # Determine parameter type (Type vs Instance)
+                    parameter_type = "Type"
+                    try:
+                        # Check if parameter is shared and instance-level
+                        if hasattr(param.Definition, "ParameterType"):
+                            # Most family symbol parameters are Type parameters
+                            # Instance parameters would only be available on placed instances
+                            if param.Definition.VariesAcrossGroups:
+                                parameter_type = "Instance"
+                            else:
+                                parameter_type = "Type"
+
+                        # Additional check using parameter binding
+                        if hasattr(param, "IsShared") and param.IsShared:
+                            # Shared parameters can be either type or instance
+                            parameter_type = "Type (Shared)"
+
+                    except:
+                        # Default to Type for family symbol parameters
+                        parameter_type = "Type"
+
                     param_status["available_parameters"].append(
                         {
                             "name": param_name,
                             "parameter": param,
                             "is_readonly": param.IsReadOnly,
                             "storage_type": str(param.StorageType),
+                            "parameter_type": parameter_type,
+                            "is_shared": getattr(param, "IsShared", False),
                         }
                     )
                 else:
@@ -653,11 +687,37 @@ def find_mech_equipment_by_family_name_safe(name: str) -> Dict:
         }
 
 
+def check_family_parameters_safe(name: str) -> Dict:
+    """Check family parameters for mechanical equipment"""
+
+    try:
+        if not REVIT_AVAILABLE:
+            return {"success": False, "message": "Revit API not available"}
+
+        creator = MechanicalEquipmentVariantCreator()
+        symbol = creator.find_mech_equipment_by_family_name(name)
+
+        if not symbol:
+            return {"success": False, "message": "Equipment not found"}
+
+        # Check family parameters
+        family_params = creator.check_family_parameters(symbol)
+        return {"success": True, "family_parameters": family_params}
+
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error checking family parameters: {e}",
+            "error": str(e),
+        }
+
+
 # Dynamo compatibility with better error handling
 try:
     # use example function
-    OUT = find_mech_equipment_by_family_name_safe("hvac_schematic-box")
+    # OUT = find_mech_equipment_by_family_name_safe("hvac_schematic-box")
     # OUT = find_mech_equipment_by_name_safe("HeatRecoveryUnit")
+    OUT = check_family_parameters_safe("hvac_schematic-box")
 
     # Also provide the result in a format Dynamo can handle
     if OUT is None:
