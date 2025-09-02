@@ -120,7 +120,8 @@ class MechanicalEquipmentVariantCreator:
             for symbol in symbols_list:
                 if symbol.Family and symbol.Family.Name.lower() == base_name_lower:
                     print(
-                        f"Found exact family name match: (Family: '{symbol.FamilyName}') 
+                        f"Found exact family name match: (Family: '{symbol.FamilyName}')"
+                    )
                     return symbol
 
             # 2. Partial family name match (case insensitive)
