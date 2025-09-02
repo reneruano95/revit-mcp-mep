@@ -87,16 +87,16 @@ class MechanicalEquipmentVariantCreator:
         self, base_name: str
     ) -> Optional[FamilySymbol]:
         """
-        Find a mechanical equipment family symbol by name with improved search
+        Find a mechanical equipment family symbol by family name only
 
         Args:
-            base_name: Base name to search for
+            base_name: Family name to search for
 
         Returns:
             FamilySymbol if found, None otherwise
         """
         try:
-            print(f"Searching for mechanical equipment by name: '{base_name}'")
+            print(f"Searching for mechanical equipment by family name: '{base_name}'")
 
             collector = FilteredElementCollector(self.doc)
             family_symbols = collector.OfClass(FamilySymbol).OfCategory(
@@ -110,45 +110,28 @@ class MechanicalEquipmentVariantCreator:
             print("Available equipment:")
             for i, symbol in enumerate(symbols_list):
                 family_name = symbol.Family.Name if symbol.Family else "Unknown"
-                print(f"  {i+1}. '{symbol.Name}' (Family: '{family_name}')")
 
-            # Try different search strategies
+                print(f"{i+1:3d}. Family: '{family_name}' | Active: {symbol.IsActive}")
+
+            # Search only by family name
             base_name_lower = base_name.lower().strip()
 
-            # 1. Exact match (case insensitive)
+            # 1. Exact family name match (case insensitive)
             for symbol in symbols_list:
-                if symbol.Name.lower() == base_name_lower:
-                    print(f"Found exact match: '{symbol.Name}'")
+                if symbol.Family and symbol.Family.Name.lower() == base_name_lower:
+                    print(
+                        f"Found exact family name match: (Family: '{symbol.FamilyName}') 
                     return symbol
 
-            # 2. Contains match (case insensitive)
-            for symbol in symbols_list:
-                if base_name_lower in symbol.Name.lower():
-                    print(f"Found partial match: '{symbol.Name}'")
-                    return symbol
-
-            # 3. Family name match
+            # 2. Partial family name match (case insensitive)
             for symbol in symbols_list:
                 if symbol.Family and base_name_lower in symbol.Family.Name.lower():
                     print(
-                        f"Found family name match: '{symbol.Name}' (Family: '{symbol.Family.Name}')"
+                        f"Found partial family name match: (Family: '{symbol.FamilyName}')"
                     )
                     return symbol
 
-            # 4. Remove common prefixes/suffixes and try again
-            cleaned_name = base_name_lower.replace("_", " ").replace("-", " ")
-            for symbol in symbols_list:
-                cleaned_symbol_name = (
-                    symbol.Name.lower().replace("_", " ").replace("-", " ")
-                )
-                if (
-                    cleaned_name in cleaned_symbol_name
-                    or cleaned_symbol_name in cleaned_name
-                ):
-                    print(f"Found cleaned name match: '{symbol.Name}'")
-                    return symbol
-
-            print(f"No equipment found matching '{base_name}'")
+            print(f"No equipment found with family name matching '{base_name}'")
             return None
 
         except Exception as e:
@@ -645,10 +628,35 @@ def list_equipment_safe() -> Dict:
         }
 
 
+def find_mech_equipment_by_name_safe(name: str) -> Dict:
+    """
+    Safe function to find mechanical equipment by name
+    """
+    try:
+        if not REVIT_AVAILABLE:
+            return {"success": False, "message": "Revit API not available"}
+
+        creator = MechanicalEquipmentVariantCreator()
+        symbol = creator.find_mechanical_equipment_by_name(name)
+
+        if symbol:
+            return {"success": True, "equipment": symbol}
+
+        return {"success": False, "message": "Equipment not found"}
+
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error finding equipment: {e}",
+            "error": str(e),
+        }
+
+
 # Dynamo compatibility with better error handling
 try:
-    # Use safe main function
-    OUT = list_equipment_safe()
+    # use example function
+    OUT = find_mech_equipment_by_name_safe("hvac_schematic-box")
+    # OUT = find_mech_equipment_by_name_safe("HeatRecoveryUnit")
 
     # Also provide the result in a format Dynamo can handle
     if OUT is None:
