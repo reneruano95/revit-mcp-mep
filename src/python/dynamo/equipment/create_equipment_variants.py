@@ -83,7 +83,7 @@ class MechanicalEquipmentVariantCreator:
                 "family_name": "Error",
             }
 
-    def find_mechanical_equipment_by_name(
+    def find_mech_equipment_by_family_name(
         self, base_name: str
     ) -> Optional[FamilySymbol]:
         """
@@ -408,7 +408,7 @@ class MechanicalEquipmentVariantCreator:
         """
 
         # Find base symbol
-        base_symbol = self.find_mechanical_equipment_by_name(base_symbol_name)
+        base_symbol = self.find_mech_equipment_by_family_name(base_symbol_name)
         if not base_symbol:
             return {
                 "success": False,
@@ -546,7 +546,7 @@ def main():
             # Test search if equipment exists
             if equipment_list:
                 first_equipment_name = equipment_list[0]["symbol_name"]
-                found_symbol = creator.find_mechanical_equipment_by_name(
+                found_symbol = creator.find_mech_equipment_by_family_name(
                     first_equipment_name
                 )
                 result["test_search"] = {
@@ -587,7 +587,7 @@ def create_equipment_variants_safe(
         creator = MechanicalEquipmentVariantCreator()
 
         # Find base equipment
-        base_symbol = creator.find_mechanical_equipment_by_name(base_equipment_name)
+        base_symbol = creator.find_mech_equipment_by_family_name(base_equipment_name)
         if not base_symbol:
             return {
                 "success": False,
@@ -629,7 +629,7 @@ def list_equipment_safe() -> Dict:
         }
 
 
-def find_mech_equipment_by_name_safe(name: str) -> Dict:
+def find_mech_equipment_by_family_name_safe(name: str) -> Dict:
     """
     Safe function to find mechanical equipment by name
     """
@@ -638,7 +638,7 @@ def find_mech_equipment_by_name_safe(name: str) -> Dict:
             return {"success": False, "message": "Revit API not available"}
 
         creator = MechanicalEquipmentVariantCreator()
-        symbol = creator.find_mechanical_equipment_by_name(name)
+        symbol = creator.find_mech_equipment_by_family_name(name)
 
         if symbol:
             return {"success": True, "equipment": symbol}
@@ -656,7 +656,7 @@ def find_mech_equipment_by_name_safe(name: str) -> Dict:
 # Dynamo compatibility with better error handling
 try:
     # use example function
-    OUT = find_mech_equipment_by_name_safe("hvac_schematic-box")
+    OUT = find_mech_equipment_by_family_name_safe("hvac_schematic-box")
     # OUT = find_mech_equipment_by_name_safe("HeatRecoveryUnit")
 
     # Also provide the result in a format Dynamo can handle
