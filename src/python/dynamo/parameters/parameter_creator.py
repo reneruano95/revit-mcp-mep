@@ -321,23 +321,11 @@ def create_single_parameter(
         group_name=group_name,
     )
 
-
 # Example usage functions
 def create_room_name_parameter(scope="instance"):
     """Create JAL_Room Name parameter"""
     return create_single_parameter("JAL_Room Name", "text", scope)
 
-
 def create_room_number_parameter(scope="instance"):
     """Create JAL_Room Number parameter"""
     return create_single_parameter("JAL_Room Number", "text", scope)
-
-
-def create_power_rating_parameter(scope="instance"):
-    """Create power rating parameter for electrical equipment"""
-    return create_single_parameter(
-        "JAL_Power Rating",
-        "electrical_power",
-        scope,
-        ["electrical_equipment", "mechanical_equipment"],
-    )
