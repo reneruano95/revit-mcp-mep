@@ -192,12 +192,12 @@ class MechanicalEquipmentVariantCreator:
             print(f"Error getting equipment types: {e}")
             return []
 
-    def list_all_mechanical_equipment(self) -> List[Dict]:
+    def list_all_mechanical_equipment_families(self) -> List[Dict]:
         """
-        Get detailed list of all mechanical equipment for debugging
+        List all mechanical equipment family symbols with basic info
 
         Returns:
-            List of equipment info dictionaries
+            List of equipment family info dictionaries
         """
         try:
             collector = FilteredElementCollector(self.doc)
@@ -560,7 +560,7 @@ def main():
 
         # List equipment
         try:
-            equipment_list = creator.list_all_mechanical_equipment()
+            equipment_list = creator.list_all_mechanical_equipment_families()
             print(f"Found {len(equipment_list)} mechanical equipment types")
 
             result = {
@@ -647,7 +647,7 @@ def list_equipment_safe() -> Dict:
             return {"success": False, "message": "Revit API not available"}
 
         creator = MechanicalEquipmentVariantCreator()
-        equipment_list = creator.list_all_mechanical_equipment()
+        equipment_list = creator.list_all_mechanical_equipment_families()
 
         return {
             "success": True,
@@ -714,10 +714,14 @@ def check_family_parameters_safe(name: str) -> Dict:
 
 # Dynamo compatibility with better error handling
 try:
+
     # use example function
     # OUT = find_mech_equipment_by_family_name_safe("hvac_schematic-box")
     # OUT = find_mech_equipment_by_name_safe("HeatRecoveryUnit")
-    OUT = check_family_parameters_safe("hvac_schematic-box")
+    # OUT = check_family_parameters_safe("hvac_schematic-box")
+
+    creator = MechanicalEquipmentVariantCreator()
+    OUT = creator.list_all_mechanical_equipment_families()
 
     # Also provide the result in a format Dynamo can handle
     if OUT is None:
