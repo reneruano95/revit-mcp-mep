@@ -45,7 +45,7 @@ def safe_get_family_name(symbol):
         return "Error Getting Family"
 
 
-def analyze_mechanical_equipment_types():
+def discover_mechanical_equipment_methods():
     """Explore different ways to find mechanical equipment"""
 
     results = {}
@@ -183,7 +183,7 @@ def analyze_mechanical_equipment_types():
 
 # Run the exploration
 try:
-    OUT = analyze_mechanical_equipment_types()
+    OUT = discover_mechanical_equipment_methods()
 except Exception as e:
     OUT = {"success": False, "error": f"Failed to run exploration: {str(e)}"}
 
