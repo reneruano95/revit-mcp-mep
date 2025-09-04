@@ -131,13 +131,13 @@ class MechanicalEquipmentVariantCreator:
         """
         try:
             print(f"Searching for mechanical equipment by family name: '{base_name}'")
-
+            # Collect all mechanical equipment family symbols
             collector = FilteredElementCollector(self.doc)
             family_symbols = collector.OfClass(FamilySymbol).OfCategory(
                 BuiltInCategory.OST_MechanicalEquipment
             )
 
-            symbols_list = list(family_symbols)
+            symbols_list = list(family_symbols) # Convert to list for multiple iterations
             print(f"Found {len(symbols_list)} total mechanical equipment types")
 
             # Print all available equipment for debugging
@@ -145,7 +145,7 @@ class MechanicalEquipmentVariantCreator:
             for i, symbol in enumerate(symbols_list):
                 family_name = symbol.Family.Name if symbol.Family else "Unknown"
 
-                print(f"{i+1:3d}. Family: '{family_name}' | Active: {symbol.IsActive}")
+                print(f"{i+1:3d}. Family: '{family_name}'")
 
             # Search only by family name
             base_name_lower = base_name.lower().strip()
@@ -223,9 +223,9 @@ class MechanicalEquipmentVariantCreator:
 
             # Set dimension parameters if they exist in the family
             dimensions = {
-                "JAL_Height": variant_config.get("height", 3.0),
-                "JAL_Width": variant_config.get("width", 2.0),
-                "JAL_Length": variant_config.get("length", 4.0),
+                "Height": variant_config.get("height", 3.0),
+                "Width": variant_config.get("width", 2.0),
+                "Length": variant_config.get("length", 4.0),
             }
 
             set_parameters = []
@@ -269,7 +269,6 @@ class MechanicalEquipmentVariantCreator:
                 "success": True,
                 "symbol": new_symbol,
                 "name": variant_config["name"],
-                "base_name": base_symbol.Name,
                 "family_name": param_status["family_name"],
                 "dimensions": dimensions,
                 "set_parameters": set_parameters,
@@ -315,7 +314,7 @@ class MechanicalEquipmentVariantCreator:
 
         results = {
             "success": True,
-            "base_symbol": base_symbol.Name if base_symbol else "None",
+            "base_symbol": base_symbol.FamilyName if base_symbol else "None",
             "total_count": len(variant_configs),
             "created_count": 0,
             "failed_count": 0,
@@ -683,8 +682,34 @@ try:
     # OUT = find_mech_equipment_by_name_safe("HeatRecoveryUnit")
     # OUT = check_family_parameters_safe("hvac_schematic-box")
 
-    creator = MechanicalEquipmentVariantCreator()
-    OUT = creator.get_all_mechanical_equipment_types()
+    # creator = MechanicalEquipmentVariantCreator()
+    # OUT = creator.get_all_mechanical_equipment_types()
+
+    # Example variant creation
+    variant_configs = [
+        {
+            "name": "WSHP-A",
+            "height": 4.0,
+            "width": 6.0,
+            "length": 8.0,
+            "description": "1 Ton water source heat pump",
+        },
+        {
+            "name": "WSHP-B",
+            "height": 4.5,
+            "width": 7.0,
+            "length": 10.0,
+            "description": "1.5 Ton water source heat pump",
+        },
+        {
+            "name": "WSHP-C",
+            "height": 5.0,
+            "width": 8.0,
+            "length": 12.0,
+            "description": "2 Ton water source heat pump",
+        },
+    ]
+    OUT = create_equipment_variants_safe("hvac_schematic-box", variant_configs)
 
     # Also provide the result in a format Dynamo can handle
     if OUT is None:
