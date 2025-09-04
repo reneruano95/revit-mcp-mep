@@ -200,7 +200,7 @@ class MechanicalEquipmentVariantCreator:
         self, base_symbol: FamilySymbol, variant_config: Dict, param_status: Dict = None
     ) -> Dict:
         """
-        Create a new equipment variant with specified dimensions
+        Create a single equipment variant from a base symbol
 
         Args:
             base_symbol: Base FamilySymbol to duplicate
