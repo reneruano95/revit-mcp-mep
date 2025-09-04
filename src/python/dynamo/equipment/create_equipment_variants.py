@@ -206,10 +206,6 @@ class MechanicalEquipmentVariantCreator:
             base_symbol: Base FamilySymbol to duplicate
             variant_config: Configuration with keys:
                 - name: New type name
-                - height: Height in feet
-                - width: Width in feet
-                - length: Length in feet
-                - description: Optional description
 
         Returns:
             Creation result dictionary
@@ -226,46 +222,46 @@ class MechanicalEquipmentVariantCreator:
             # Duplicate the family symbol
             new_symbol = base_symbol.Duplicate(variant_config["name"])
 
-            # Set dimension parameters if they exist in the family
-            dimensions = {
-                "Height": variant_config.get("height", 3.0),
-                "Width": variant_config.get("width", 2.0),
-                "Length": variant_config.get("length", 4.0),
-            }
+            # # Set dimension parameters if they exist in the family
+            # dimensions = {
+            #     "Height": variant_config.get("height", 3.0),
+            #     "Width": variant_config.get("width", 2.0),
+            #     "Length": variant_config.get("length", 4.0),
+            # }
 
-            set_parameters = []
-            failed_parameters = []
+            # set_parameters = []
+            # failed_parameters = []
 
-            # Only try to set parameters that exist in the family
-            for param_info in param_status["available_parameters"]:
-                param_name = param_info["name"]
-                param = param_info["parameter"]
+            # # Only try to set parameters that exist in the family
+            # for param_info in param_status["available_parameters"]:
+            #     param_name = param_info["name"]
+            #     param = param_info["parameter"]
 
-                if param_name in dimensions:
-                    value = dimensions[param_name]
-                    try:
-                        if not param.IsReadOnly:
-                            param.Set(value)
-                            set_parameters.append(f"{param_name}: {value:.2f}ft")
-                        else:
-                            failed_parameters.append(f"{param_name} (read-only)")
-                    except Exception as e:
-                        failed_parameters.append(f"{param_name} (error: {str(e)})")
+            #     if param_name in dimensions:
+            #         value = dimensions[param_name]
+            #         try:
+            #             if not param.IsReadOnly:
+            #                 param.Set(value)
+            #                 set_parameters.append(f"{param_name}: {value:.2f}ft")
+            #             else:
+            #                 failed_parameters.append(f"{param_name} (read-only)")
+            #         except Exception as e:
+            #             failed_parameters.append(f"{param_name} (error: {str(e)})")
 
-            # Report missing parameters
-            for missing_param in param_status["missing_parameters"]:
-                failed_parameters.append(f"{missing_param} (not found in family)")
+            # # Report missing parameters
+            # for missing_param in param_status["missing_parameters"]:
+            #     failed_parameters.append(f"{missing_param} (not found in family)")
 
-            # Set description if provided
-            description = variant_config.get("description", "")
-            if description:
-                try:
-                    desc_param = new_symbol.LookupParameter("Type Comments")
-                    if desc_param and not desc_param.IsReadOnly:
-                        desc_param.Set(description)
-                        set_parameters.append(f"Description: {description}")
-                except:
-                    pass
+            # # Set description if provided
+            # description = variant_config.get("description", "")
+            # if description:
+            #     try:
+            #         desc_param = new_symbol.LookupParameter("Type Comments")
+            #         if desc_param and not desc_param.IsReadOnly:
+            #             desc_param.Set(description)
+            #             set_parameters.append(f"Description: {description}")
+            #     except:
+            #         pass
 
             # Commit transaction
             TransactionManager.Instance.TransactionTaskDone()
@@ -275,13 +271,6 @@ class MechanicalEquipmentVariantCreator:
                 "symbol": new_symbol,
                 "name": variant_config["name"],
                 "family_name": param_status["family_name"],
-                "dimensions": dimensions,
-                "set_parameters": set_parameters,
-                "failed_parameters": failed_parameters,
-                "available_family_parameters": [
-                    p["name"] for p in param_status["available_parameters"]
-                ],
-                "missing_family_parameters": param_status["missing_parameters"],
                 "message": f"Created variant '{variant_config['name']}' successfully",
             }
 
@@ -333,7 +322,6 @@ class MechanicalEquipmentVariantCreator:
 
         # Check family parameters once before processing
         param_status = self.check_equipment_parameter_status(base_symbol)
-        results["family_parameter_status"] = param_status
 
         for config in variant_configs:
             # Create each variant and collect results
@@ -346,9 +334,6 @@ class MechanicalEquipmentVariantCreator:
                 results["failed_count"] += 1
 
         results["success"] = results["failed_count"] == 0
-        results["success_rate"] = (
-            f"{(results['created_count']/results['total_count']*100):.1f}%"
-        )
 
         return results
 
