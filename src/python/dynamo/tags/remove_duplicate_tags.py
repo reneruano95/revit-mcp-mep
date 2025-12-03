@@ -102,6 +102,16 @@ class DuplicateTagRemover:
                 "structural_column", "structural_framing", "structural_foundation",
             ],
         }
+        
+        # View discipline mapping
+        self.DISCIPLINE_MAP = {
+            "mechanical": ViewDiscipline.Mechanical,
+            "electrical": ViewDiscipline.Electrical,
+            "plumbing": ViewDiscipline.Plumbing,
+            "architectural": ViewDiscipline.Architectural,
+            "structural": ViewDiscipline.Structural,
+            "coordination": ViewDiscipline.Coordination,
+        }
 
     def get_all_tag_categories(self):
         """Get all tag categories available in Revit"""
@@ -592,6 +602,240 @@ class DuplicateTagRemover:
         
         return True
 
+    def get_views_on_sheets(self):
+        """
+        Get all views that are placed on sheets
+
+        Returns:
+            List of View elements that are placed on sheets
+        """
+        # Get all sheets
+        sheets = FilteredElementCollector(self.doc).OfClass(ViewSheet).ToElements()
+        
+        views_on_sheets = set()
+        
+        for sheet in sheets:
+            try:
+                # Get all viewports on this sheet
+                viewport_ids = sheet.GetAllViewports()
+                for vp_id in viewport_ids:
+                    viewport = self.doc.GetElement(vp_id)
+                    if viewport:
+                        view_id = viewport.ViewId
+                        view = self.doc.GetElement(view_id)
+                        if view and self._view_supports_tags(view):
+                            views_on_sheets.add(view.Id.IntegerValue)
+            except Exception as e:
+                self.errors.append(f"Error getting views from sheet '{sheet.Name}': {str(e)}")
+        
+        # Convert to list of views
+        return [self.doc.GetElement(ElementId(vid)) for vid in views_on_sheets]
+
+    def resolve_discipline_filter(self, discipline_filter):
+        """
+        Resolve discipline filter to ViewDiscipline value(s)
+
+        Args:
+            discipline_filter: Can be:
+                - None: returns None (no filter)
+                - str: discipline name (e.g., "mechanical", "electrical", "plumbing")
+                - list: list of discipline names
+
+        Returns:
+            List of ViewDiscipline values or None
+        """
+        if discipline_filter is None:
+            return None
+
+        if isinstance(discipline_filter, str):
+            discipline_lower = discipline_filter.lower()
+            if discipline_lower in self.DISCIPLINE_MAP:
+                return [self.DISCIPLINE_MAP[discipline_lower]]
+            raise ValueError(
+                f"Unknown discipline '{discipline_filter}'. "
+                f"Available disciplines: {list(self.DISCIPLINE_MAP.keys())}"
+            )
+
+        if isinstance(discipline_filter, list):
+            resolved = []
+            for item in discipline_filter:
+                if isinstance(item, str):
+                    item_lower = item.lower()
+                    if item_lower in self.DISCIPLINE_MAP:
+                        resolved.append(self.DISCIPLINE_MAP[item_lower])
+                    else:
+                        raise ValueError(f"Unknown discipline '{item}'")
+                else:
+                    resolved.append(item)
+            return resolved
+
+        return [discipline_filter]
+
+    def _view_matches_discipline(self, view, discipline_filter):
+        """
+        Check if a view matches the discipline filter
+
+        Args:
+            view: The view to check
+            discipline_filter: List of ViewDiscipline values or None
+
+        Returns:
+            True if view matches filter or no filter specified
+        """
+        if discipline_filter is None:
+            return True
+
+        try:
+            view_discipline = view.Discipline
+            return view_discipline in discipline_filter
+        except:
+            # If view doesn't have Discipline property, include it
+            return True
+
+    def get_filtered_views(self, on_sheets_only=False, discipline=None, view_types=None):
+        """
+        Get views filtered by sheet placement, discipline, and type
+
+        Args:
+            on_sheets_only: If True, only return views that are on sheets
+            discipline: Filter by discipline (e.g., "mechanical", "electrical", "plumbing")
+            view_types: Optional list of ViewType to filter
+
+        Returns:
+            List of filtered View elements
+        """
+        discipline_filter = self.resolve_discipline_filter(discipline)
+        
+        if on_sheets_only:
+            all_views = self.get_views_on_sheets()
+        else:
+            collector = (
+                FilteredElementCollector(self.doc)
+                .OfClass(View)
+                .WhereElementIsNotElementType()
+            )
+            all_views = list(collector.ToElements())
+        
+        filtered_views = []
+        for view in all_views:
+            # Skip views that don't support tags
+            if not self._view_supports_tags(view):
+                continue
+            
+            # Filter by view type if specified
+            if view_types and view.ViewType not in view_types:
+                continue
+            
+            # Filter by discipline
+            if not self._view_matches_discipline(view, discipline_filter):
+                continue
+            
+            filtered_views.append(view)
+        
+        return filtered_views
+
+    def preview_duplicates_filtered(self, tag_filter=None, on_sheets_only=False, discipline=None, view_types=None):
+        """
+        Preview duplicate tags in filtered views without removing them
+
+        Args:
+            tag_filter: Filter for tag types
+            on_sheets_only: If True, only check views that are on sheets
+            discipline: Filter by discipline (e.g., "mechanical", "electrical", "plumbing")
+            view_types: Optional list of ViewType to filter
+
+        Returns:
+            Summary of all duplicates found across filtered views
+        """
+        views = self.get_filtered_views(on_sheets_only, discipline, view_types)
+        
+        results = []
+        total_duplicates = 0
+        total_duplicate_tags = 0
+        
+        for view in views:
+            try:
+                result = self.preview_duplicates_in_view(view, tag_filter)
+                if result["duplicates_found"] > 0:
+                    results.append(result)
+                    total_duplicates += result["duplicates_found"]
+                    total_duplicate_tags += result["total_duplicate_tags"]
+            except Exception as e:
+                self.errors.append(f"Error processing view '{view.Name}': {str(e)}")
+        
+        filter_info = []
+        if on_sheets_only:
+            filter_info.append("views on sheets")
+        if discipline:
+            filter_info.append(f"discipline: {discipline}")
+        if view_types:
+            filter_info.append(f"view types: {[str(vt) for vt in view_types]}")
+        
+        return {
+            "success": True,
+            "tag_filter": str(tag_filter) if tag_filter else "all",
+            "view_filter": ", ".join(filter_info) if filter_info else "all views",
+            "views_checked": len(views),
+            "views_with_duplicates": len(results),
+            "total_duplicates_found": total_duplicates,
+            "total_duplicate_tags": total_duplicate_tags,
+            "details": results,
+            "errors": self.errors if self.errors else None,
+        }
+
+    def remove_duplicates_filtered(self, tag_filter=None, on_sheets_only=False, discipline=None, view_types=None):
+        """
+        Remove duplicate tags from filtered views
+
+        Args:
+            tag_filter: Filter for tag types
+            on_sheets_only: If True, only process views that are on sheets
+            discipline: Filter by discipline (e.g., "mechanical", "electrical", "plumbing")
+            view_types: Optional list of ViewType to filter
+
+        Returns:
+            Summary of all removals
+        """
+        views = self.get_filtered_views(on_sheets_only, discipline, view_types)
+        
+        results = []
+        total_removed = 0
+        total_duplicates = 0
+        
+        for view in views:
+            try:
+                result = self.remove_duplicate_tags_in_view(view, tag_filter)
+                if result["duplicates_found"] > 0:
+                    results.append(result)
+                    total_removed += result["tags_removed"]
+                    total_duplicates += result["duplicates_found"]
+            except Exception as e:
+                self.errors.append(f"Error processing view '{view.Name}': {str(e)}")
+        
+        filter_info = []
+        if on_sheets_only:
+            filter_info.append("views on sheets")
+        if discipline:
+            filter_info.append(f"discipline: {discipline}")
+        if view_types:
+            filter_info.append(f"view types: {[str(vt) for vt in view_types]}")
+        
+        return {
+            "success": True,
+            "tag_filter": str(tag_filter) if tag_filter else "all",
+            "view_filter": ", ".join(filter_info) if filter_info else "all views",
+            "views_processed": len(views),
+            "views_with_duplicates": len(results),
+            "total_duplicates_found": total_duplicates,
+            "total_tags_removed": total_removed,
+            "details": results,
+            "errors": self.errors if self.errors else None,
+        }
+
+    def list_available_disciplines(self):
+        """List all available discipline filters"""
+        return list(self.DISCIPLINE_MAP.keys())
+
 
 # Convenience functions for Dynamo usage
 def remove_duplicate_tags_active_view(tag_filter=None):
@@ -693,11 +937,121 @@ def list_available_tag_filters():
     return remover.list_available_tag_types()
 
 
+def list_available_disciplines():
+    """List all available disciplines for filtering"""
+    remover = DuplicateTagRemover()
+    return remover.list_available_disciplines()
+
+
+def preview_duplicates_on_sheets(tag_filter=None, discipline=None):
+    """
+    Preview duplicate tags in views that are on sheets
+    
+    Args:
+        tag_filter: Filter for tag types (e.g., "duct", "all_mep", "mechanical")
+        discipline: Filter by discipline (e.g., "mechanical", "electrical", "plumbing")
+    """
+    remover = DuplicateTagRemover()
+    return remover.preview_duplicates_filtered(
+        tag_filter=tag_filter,
+        on_sheets_only=True,
+        discipline=discipline
+    )
+
+
+def preview_duplicates_by_discipline(discipline, tag_filter=None, on_sheets_only=False):
+    """
+    Preview duplicate tags in views of a specific discipline
+    
+    Args:
+        discipline: Discipline to filter (e.g., "mechanical", "electrical", "plumbing")
+        tag_filter: Filter for tag types (e.g., "duct", "all_mep", "mechanical")
+        on_sheets_only: If True, only check views that are on sheets
+    """
+    remover = DuplicateTagRemover()
+    return remover.preview_duplicates_filtered(
+        tag_filter=tag_filter,
+        on_sheets_only=on_sheets_only,
+        discipline=discipline
+    )
+
+
+def remove_duplicates_on_sheets(tag_filter=None, discipline=None):
+    """
+    Remove duplicate tags from views that are on sheets
+    
+    Args:
+        tag_filter: Filter for tag types (e.g., "duct", "all_mep", "mechanical")
+        discipline: Filter by discipline (e.g., "mechanical", "electrical", "plumbing")
+    """
+    remover = DuplicateTagRemover()
+    return remover.remove_duplicates_filtered(
+        tag_filter=tag_filter,
+        on_sheets_only=True,
+        discipline=discipline
+    )
+
+
+def remove_duplicates_by_discipline(discipline, tag_filter=None, on_sheets_only=False):
+    """
+    Remove duplicate tags from views of a specific discipline
+    
+    Args:
+        discipline: Discipline to filter (e.g., "mechanical", "electrical", "plumbing")
+        tag_filter: Filter for tag types (e.g., "duct", "all_mep", "mechanical")
+        on_sheets_only: If True, only process views that are on sheets
+    """
+    remover = DuplicateTagRemover()
+    return remover.remove_duplicates_filtered(
+        tag_filter=tag_filter,
+        on_sheets_only=on_sheets_only,
+        discipline=discipline
+    )
+
+
+def preview_duplicates_filtered(tag_filter=None, on_sheets_only=False, discipline=None):
+    """
+    Preview duplicates with multiple filters
+    
+    Args:
+        tag_filter: Filter for tag types (e.g., "duct", "all_mep", "mechanical")
+        on_sheets_only: If True, only check views that are on sheets
+        discipline: Filter by discipline (e.g., "mechanical", "electrical", "plumbing")
+    """
+    remover = DuplicateTagRemover()
+    return remover.preview_duplicates_filtered(
+        tag_filter=tag_filter,
+        on_sheets_only=on_sheets_only,
+        discipline=discipline
+    )
+
+
+def remove_duplicates_filtered(tag_filter=None, on_sheets_only=False, discipline=None):
+    """
+    Remove duplicates with multiple filters
+    
+    Args:
+        tag_filter: Filter for tag types (e.g., "duct", "all_mep", "mechanical")
+        on_sheets_only: If True, only process views that are on sheets
+        discipline: Filter by discipline (e.g., "mechanical", "electrical", "plumbing")
+    """
+    remover = DuplicateTagRemover()
+    return remover.remove_duplicates_filtered(
+        tag_filter=tag_filter,
+        on_sheets_only=on_sheets_only,
+        discipline=discipline
+    )
+
+
 # Dynamo/pyRevit compatibility
 # Initialize OUT variable
 OUT = None
 
 try:
+    # ============================================
+    # BASIC OPTIONS
+    # ============================================
+    
     # OPTION 1: Remove duplicates from active view (all tag types)
     # result = remove_duplicate_tags_active_view()
     
@@ -720,7 +1074,7 @@ try:
     # result = remove_duplicate_mep_tags_active_view()
     
     # ============================================
-    # TAG FILTER EXAMPLES
+    # TAG FILTER OPTIONS
     # ============================================
     
     # OPTION 8: Filter by single tag type
@@ -749,13 +1103,73 @@ try:
     
     # OPTION 13: Preview duplicates in all views
     # result = preview_duplicates_all_views()
-    # result = preview_duplicates_all_views("duct") # Preview duct tags only
+    # result = preview_duplicates_all_views("duct")  # Preview duct tags only
     result = preview_duplicates_all_views("pipe")  # Preview pipe tags only
     # result = preview_duplicates_all_views("all_mep")  # Preview MEP tags only
     # result = preview_duplicates_all_views("mechanical")  # Preview mechanical tags only
     
-    # OPTION 14: List all available tag filters
+    # ============================================
+    # VIEWS ON SHEETS OPTIONS
+    # ============================================
+    
+    # OPTION 14: Preview duplicates only in views placed on sheets
+    # result = preview_duplicates_on_sheets()  # All tags
+    # result = preview_duplicates_on_sheets("pipe")  # Pipe tags only
+    # result = preview_duplicates_on_sheets("all_mep")  # MEP tags only
+    
+    # OPTION 15: Remove duplicates only in views on sheets
+    # result = remove_duplicates_on_sheets()  # All tags
+    # result = remove_duplicates_on_sheets("pipe")  # Pipe tags only
+    # result = remove_duplicates_on_sheets("all_mep")  # MEP tags only
+    
+    # ============================================
+    # DISCIPLINE FILTER OPTIONS
+    # ============================================
+    
+    # OPTION 16: Preview duplicates by discipline
+    # result = preview_duplicates_by_discipline("mechanical")  # Only mechanical discipline views
+    # result = preview_duplicates_by_discipline("electrical")  # Only electrical discipline views
+    # result = preview_duplicates_by_discipline("plumbing")    # Only plumbing discipline views
+    # result = preview_duplicates_by_discipline("coordination")  # Coordination views
+    
+    # OPTION 17: Remove duplicates by discipline
+    # result = remove_duplicates_by_discipline("mechanical")
+    # result = remove_duplicates_by_discipline("electrical")
+    # result = remove_duplicates_by_discipline("plumbing")
+    
+    # OPTION 18: Combine discipline + tag filter
+    # result = preview_duplicates_by_discipline("mechanical", tag_filter="duct")
+    # result = preview_duplicates_by_discipline("plumbing", tag_filter="pipe")
+    # result = remove_duplicates_by_discipline("mechanical", tag_filter="mechanical")
+    
+    # ============================================
+    # COMBINED FILTERS (SHEETS + DISCIPLINE)
+    # ============================================
+    
+    # OPTION 19: Views on sheets + discipline filter
+    # result = preview_duplicates_on_sheets(discipline="mechanical")  # Mech views on sheets
+    # result = preview_duplicates_on_sheets(discipline="plumbing")    # Plumbing views on sheets
+    # result = preview_duplicates_on_sheets(tag_filter="pipe", discipline="plumbing")
+    
+    # OPTION 20: Views on sheets + discipline + remove
+    # result = remove_duplicates_on_sheets(discipline="mechanical")
+    # result = remove_duplicates_on_sheets(tag_filter="duct", discipline="mechanical")
+    
+    # OPTION 21: Full filter control
+    # result = preview_duplicates_filtered(tag_filter="pipe", on_sheets_only=True, discipline="plumbing")
+    # result = remove_duplicates_filtered(tag_filter="duct", on_sheets_only=True, discipline="mechanical")
+    # result = preview_duplicates_filtered(on_sheets_only=True)  # All tags, views on sheets only
+    # result = preview_duplicates_filtered(discipline="electrical")  # All tags, electrical views only
+    
+    # ============================================
+    # UTILITY OPTIONS
+    # ============================================
+    
+    # OPTION 22: List all available tag filters
     # result = list_available_tag_filters()
+    
+    # OPTION 23: List all available disciplines
+    # result = list_available_disciplines()
     
     OUT = result
     
