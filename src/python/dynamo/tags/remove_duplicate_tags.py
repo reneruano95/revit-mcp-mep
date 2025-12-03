@@ -503,6 +503,65 @@ class DuplicateTagRemover:
             "details": details,
         }
 
+    def preview_duplicates_in_all_views(self, tag_filter=None, view_types=None):
+        """
+        Preview duplicate tags in all views without removing them
+
+        Args:
+            tag_filter: Filter for tag types. Can be:
+                - None: all tag categories
+                - str: tag type name (e.g., "duct") or group (e.g., "all_mep", "mechanical")
+                - list: list of tag type names (e.g., ["duct", "pipe"])
+            view_types: Optional list of ViewType to filter (e.g., [ViewType.FloorPlan, ViewType.CeilingPlan])
+
+        Returns:
+            Summary of all duplicates found across views
+        """
+        # Get all views
+        collector = (
+            FilteredElementCollector(self.doc)
+            .OfClass(View)
+            .WhereElementIsNotElementType()
+        )
+        
+        all_views = list(collector.ToElements())
+        
+        results = []
+        total_duplicates = 0
+        total_duplicate_tags = 0
+        views_checked = 0
+        
+        for view in all_views:
+            # Skip views that don't support tags
+            if not self._view_supports_tags(view):
+                continue
+            
+            # Filter by view type if specified
+            if view_types and view.ViewType not in view_types:
+                continue
+            
+            views_checked += 1
+            
+            try:
+                result = self.preview_duplicates_in_view(view, tag_filter)
+                if result["duplicates_found"] > 0:
+                    results.append(result)
+                    total_duplicates += result["duplicates_found"]
+                    total_duplicate_tags += result["total_duplicate_tags"]
+            except Exception as e:
+                self.errors.append(f"Error processing view '{view.Name}': {str(e)}")
+        
+        return {
+            "success": True,
+            "tag_filter": str(tag_filter) if tag_filter else "all",
+            "views_checked": views_checked,
+            "views_with_duplicates": len(results),
+            "total_duplicates_found": total_duplicates,
+            "total_duplicate_tags": total_duplicate_tags,
+            "details": results,
+            "errors": self.errors if self.errors else None,
+        }
+
     def _view_supports_tags(self, view):
         """Check if a view type supports tags"""
         # Views that don't support tags
@@ -604,6 +663,20 @@ def preview_duplicates_active_view(tag_filter=None):
     return {"success": False, "message": "No active view"}
 
 
+def preview_duplicates_all_views(tag_filter=None):
+    """
+    Preview duplicate tags in all views without removing them
+    
+    Args:
+        tag_filter: Filter for tag types. Can be:
+            - None: all tag categories
+            - str: tag type name (e.g., "duct") or group (e.g., "all_mep", "mechanical")
+            - list: list of tag type names (e.g., ["duct", "pipe"])
+    """
+    remover = DuplicateTagRemover()
+    return remover.preview_duplicates_in_all_views(tag_filter)
+
+
 def remove_duplicate_mep_tags_active_view():
     """Remove duplicate MEP tags from the active view (all MEP categories)"""
     return remove_duplicate_tags_active_view("all_mep")
@@ -622,7 +695,7 @@ if __name__ == "__main__" or "OUT" in globals():
     # OUT = remove_duplicate_tags_active_view()
     
     # OPTION 2: Preview duplicates without removing (safer first step)
-    OUT = preview_duplicates_active_view()
+    # OUT = preview_duplicates_active_view()
     
     # OPTION 3: Remove duplicates from all views
     # OUT = remove_duplicate_tags_all_views()
@@ -667,5 +740,12 @@ if __name__ == "__main__" or "OUT" in globals():
     # OPTION 12: Preview with filter
     # OUT = preview_duplicates_active_view("mechanical")
     
-    # OPTION 13: List all available tag filters
+    # OPTION 13: Preview duplicates in all views
+    # OUT = preview_duplicates_all_views()
+    # OUT = preview_duplicates_all_views("duct") # Preview duct tags only
+    OUT = preview_duplicates_all_views("pipe")  # Preview pipe tags only
+    # OUT = preview_duplicates_all_views("all_mep")  # Preview MEP tags only
+    # OUT = preview_duplicates_all_views("mechanical")  # Preview mechanical tags only
+    
+    # OPTION 14: List all available tag filters
     # OUT = list_available_tag_filters()
