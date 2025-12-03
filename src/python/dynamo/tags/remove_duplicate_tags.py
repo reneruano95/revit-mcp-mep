@@ -29,74 +29,79 @@ class DuplicateTagRemover:
         self.removed_count = 0
         self.processed_views = []
         self.errors = []
+        
+        # Initialize tag category mapping (done in __init__ to avoid issues with class-level API calls)
+        self._init_tag_categories()
 
-    # Tag category mapping for easy reference by name
-    TAG_CATEGORY_MAP = {
-        # MEP - Mechanical
-        "mechanical_equipment": BuiltInCategory.OST_MechanicalEquipmentTags,
-        "duct": BuiltInCategory.OST_DuctTags,
-        "duct_fitting": BuiltInCategory.OST_DuctFittingTags,
-        "duct_accessory": BuiltInCategory.OST_DuctAccessoryTags,
-        "duct_terminal": BuiltInCategory.OST_DuctTerminalTags,
-        "air_terminal": BuiltInCategory.OST_DuctTerminalTags,  # Alias for duct_terminal
-        # MEP - Electrical
-        "electrical_equipment": BuiltInCategory.OST_ElectricalEquipmentTags,
-        "electrical_fixture": BuiltInCategory.OST_ElectricalFixtureTags,
-        "lighting_fixture": BuiltInCategory.OST_LightingFixtureTags,
-        "cable_tray": BuiltInCategory.OST_CableTrayTags,
-        "conduit": BuiltInCategory.OST_ConduitTags,
-        # MEP - Plumbing
-        "plumbing_fixture": BuiltInCategory.OST_PlumbingFixtureTags,
-        "pipe": BuiltInCategory.OST_PipeTags,
-        "pipe_fitting": BuiltInCategory.OST_PipeFittingTags,
-        "pipe_accessory": BuiltInCategory.OST_PipeAccessoryTags,
-        "sprinkler": BuiltInCategory.OST_SprinklerTags,
-        # Architectural
-        "door": BuiltInCategory.OST_DoorTags,
-        "window": BuiltInCategory.OST_WindowTags,
-        "room": BuiltInCategory.OST_RoomTags,
-        "area": BuiltInCategory.OST_AreaTags,
-        "wall": BuiltInCategory.OST_WallTags,
-        "floor": BuiltInCategory.OST_FloorTags,
-        "ceiling": BuiltInCategory.OST_CeilingTags,
-        "furniture": BuiltInCategory.OST_FurnitureTags,
-        "casework": BuiltInCategory.OST_CaseworkTags,
-        # Structural
-        "structural_column": BuiltInCategory.OST_StructuralColumnTags,
-        "structural_framing": BuiltInCategory.OST_StructuralFramingTags,
-        "structural_foundation": BuiltInCategory.OST_StructuralFoundationTags,
-        # Other
-        "generic_model": BuiltInCategory.OST_GenericModelTags,
-        "specialty_equipment": BuiltInCategory.OST_SpecialityEquipmentTags,
-    }
+    def _init_tag_categories(self):
+        """Initialize tag category mapping - called at instance creation time"""
+        # Tag category mapping for easy reference by name
+        self.TAG_CATEGORY_MAP = {
+            # MEP - Mechanical
+            "mechanical_equipment": BuiltInCategory.OST_MechanicalEquipmentTags,
+            "duct": BuiltInCategory.OST_DuctTags,
+            "duct_fitting": BuiltInCategory.OST_DuctFittingTags,
+            "duct_accessory": BuiltInCategory.OST_DuctAccessoryTags,
+            "duct_terminal": BuiltInCategory.OST_DuctTerminalTags,
+            "air_terminal": BuiltInCategory.OST_DuctTerminalTags,  # Alias for duct_terminal
+            # MEP - Electrical
+            "electrical_equipment": BuiltInCategory.OST_ElectricalEquipmentTags,
+            "electrical_fixture": BuiltInCategory.OST_ElectricalFixtureTags,
+            "lighting_fixture": BuiltInCategory.OST_LightingFixtureTags,
+            "cable_tray": BuiltInCategory.OST_CableTrayTags,
+            "conduit": BuiltInCategory.OST_ConduitTags,
+            # MEP - Plumbing
+            "plumbing_fixture": BuiltInCategory.OST_PlumbingFixtureTags,
+            "pipe": BuiltInCategory.OST_PipeTags,
+            "pipe_fitting": BuiltInCategory.OST_PipeFittingTags,
+            "pipe_accessory": BuiltInCategory.OST_PipeAccessoryTags,
+            "sprinkler": BuiltInCategory.OST_SprinklerTags,
+            # Architectural
+            "door": BuiltInCategory.OST_DoorTags,
+            "window": BuiltInCategory.OST_WindowTags,
+            "room": BuiltInCategory.OST_RoomTags,
+            "area": BuiltInCategory.OST_AreaTags,
+            "wall": BuiltInCategory.OST_WallTags,
+            "floor": BuiltInCategory.OST_FloorTags,
+            "ceiling": BuiltInCategory.OST_CeilingTags,
+            "furniture": BuiltInCategory.OST_FurnitureTags,
+            "casework": BuiltInCategory.OST_CaseworkTags,
+            # Structural
+            "structural_column": BuiltInCategory.OST_StructuralColumnTags,
+            "structural_framing": BuiltInCategory.OST_StructuralFramingTags,
+            "structural_foundation": BuiltInCategory.OST_StructuralFoundationTags,
+            # Other
+            "generic_model": BuiltInCategory.OST_GenericModelTags,
+            "specialty_equipment": BuiltInCategory.OST_SpecialityEquipmentTags,
+        }
 
-    # Predefined tag groups for convenience
-    TAG_GROUPS = {
-        "all_mep": [
-            "mechanical_equipment", "duct", "duct_fitting", "duct_accessory",
-            "duct_terminal", "electrical_equipment",
-            "electrical_fixture", "lighting_fixture", "cable_tray", "conduit",
-            "plumbing_fixture", "pipe", "pipe_fitting", "pipe_accessory", "sprinkler",
-        ],
-        "mechanical": [
-            "mechanical_equipment", "duct", "duct_fitting", "duct_accessory",
-            "duct_terminal",
-        ],
-        "electrical": [
-            "electrical_equipment", "electrical_fixture", "lighting_fixture",
-            "cable_tray", "conduit",
-        ],
-        "plumbing": [
-            "plumbing_fixture", "pipe", "pipe_fitting", "pipe_accessory", "sprinkler",
-        ],
-        "architectural": [
-            "door", "window", "room", "area", "wall", "floor", "ceiling",
-            "furniture", "casework",
-        ],
-        "structural": [
-            "structural_column", "structural_framing", "structural_foundation",
-        ],
-    }
+        # Predefined tag groups for convenience
+        self.TAG_GROUPS = {
+            "all_mep": [
+                "mechanical_equipment", "duct", "duct_fitting", "duct_accessory",
+                "duct_terminal", "electrical_equipment",
+                "electrical_fixture", "lighting_fixture", "cable_tray", "conduit",
+                "plumbing_fixture", "pipe", "pipe_fitting", "pipe_accessory", "sprinkler",
+            ],
+            "mechanical": [
+                "mechanical_equipment", "duct", "duct_fitting", "duct_accessory",
+                "duct_terminal",
+            ],
+            "electrical": [
+                "electrical_equipment", "electrical_fixture", "lighting_fixture",
+                "cable_tray", "conduit",
+            ],
+            "plumbing": [
+                "plumbing_fixture", "pipe", "pipe_fitting", "pipe_accessory", "sprinkler",
+            ],
+            "architectural": [
+                "door", "window", "room", "area", "wall", "floor", "ceiling",
+                "furniture", "casework",
+            ],
+            "structural": [
+                "structural_column", "structural_framing", "structural_foundation",
+            ],
+        }
 
     def get_all_tag_categories(self):
         """Get all tag categories available in Revit"""
@@ -689,63 +694,76 @@ def list_available_tag_filters():
 
 
 # Dynamo/pyRevit compatibility
-if __name__ == "__main__" or "OUT" in globals():
-    
+# Initialize OUT variable
+OUT = None
+
+try:
     # OPTION 1: Remove duplicates from active view (all tag types)
-    # OUT = remove_duplicate_tags_active_view()
+    # result = remove_duplicate_tags_active_view()
     
     # OPTION 2: Preview duplicates without removing (safer first step)
-    # OUT = preview_duplicates_active_view()
+    # result = preview_duplicates_active_view()
     
     # OPTION 3: Remove duplicates from all views
-    # OUT = remove_duplicate_tags_all_views()
+    # result = remove_duplicate_tags_all_views()
     
     # OPTION 4: Remove duplicates from all views (MEP tags only)
-    # OUT = remove_duplicate_tags_all_views("all_mep")
+    # result = remove_duplicate_tags_all_views("all_mep")
     
     # OPTION 5: Remove duplicates from floor plans only
-    # OUT = remove_duplicate_tags_floor_plans()
+    # result = remove_duplicate_tags_floor_plans()
     
     # OPTION 6: Remove duplicates from specific views
-    # OUT = remove_duplicate_tags_selected_views(["Level 1 - Mechanical", "Level 2 - Mechanical"])
+    # result = remove_duplicate_tags_selected_views(["Level 1 - Mechanical", "Level 2 - Mechanical"])
     
     # OPTION 7: Remove MEP tags only from active view
-    # OUT = remove_duplicate_mep_tags_active_view()
+    # result = remove_duplicate_mep_tags_active_view()
     
     # ============================================
     # TAG FILTER EXAMPLES
     # ============================================
     
     # OPTION 8: Filter by single tag type
-    # OUT = remove_duplicate_tags_active_view("duct")  # Only duct tags
-    # OUT = remove_duplicate_tags_active_view("pipe")  # Only pipe tags
-    # OUT = remove_duplicate_tags_active_view("mechanical_equipment")  # Only mech equipment tags
+    # result = remove_duplicate_tags_active_view("duct")  # Only duct tags
+    # result = remove_duplicate_tags_active_view("pipe")  # Only pipe tags
+    # result = remove_duplicate_tags_active_view("mechanical_equipment")  # Only mech equipment tags
     
     # OPTION 9: Filter by tag group (active view)
-    # OUT = remove_duplicate_tags_active_view("mechanical")  # All mechanical tags
-    # OUT = remove_duplicate_tags_active_view("electrical")  # All electrical tags
-    # OUT = remove_duplicate_tags_active_view("plumbing")    # All plumbing tags
-    # OUT = remove_duplicate_tags_active_view("all_mep")     # All MEP tags
-    # OUT = remove_duplicate_tags_active_view("architectural")  # All architectural tags
+    # result = remove_duplicate_tags_active_view("mechanical")  # All mechanical tags
+    # result = remove_duplicate_tags_active_view("electrical")  # All electrical tags
+    # result = remove_duplicate_tags_active_view("plumbing")    # All plumbing tags
+    # result = remove_duplicate_tags_active_view("all_mep")     # All MEP tags
+    # result = remove_duplicate_tags_active_view("architectural")  # All architectural tags
     
     # OPTION 10: Filter by tag group (all views)
-    # OUT = remove_duplicate_tags_all_views("mechanical")  # All mechanical tags in all views
-    # OUT = remove_duplicate_tags_all_views("electrical")  # All electrical tags in all views
-    # OUT = remove_duplicate_tags_all_views("plumbing")    # All plumbing tags in all views
+    # result = remove_duplicate_tags_all_views("mechanical")  # All mechanical tags in all views
+    # result = remove_duplicate_tags_all_views("electrical")  # All electrical tags in all views
+    # result = remove_duplicate_tags_all_views("plumbing")    # All plumbing tags in all views
     
     # OPTION 11: Filter by multiple specific tag types
-    # OUT = remove_duplicate_tags_active_view(["duct", "pipe", "mechanical_equipment"])
-    # OUT = remove_duplicate_tags_all_views(["duct", "pipe", "mechanical_equipment"])
+    # result = remove_duplicate_tags_active_view(["duct", "pipe", "mechanical_equipment"])
+    # result = remove_duplicate_tags_all_views(["duct", "pipe", "mechanical_equipment"])
     
     # OPTION 12: Preview with filter
-    # OUT = preview_duplicates_active_view("mechanical")
+    # result = preview_duplicates_active_view("mechanical")
     
     # OPTION 13: Preview duplicates in all views
-    # OUT = preview_duplicates_all_views()
-    # OUT = preview_duplicates_all_views("duct") # Preview duct tags only
-    OUT = preview_duplicates_all_views("pipe")  # Preview pipe tags only
-    # OUT = preview_duplicates_all_views("all_mep")  # Preview MEP tags only
-    # OUT = preview_duplicates_all_views("mechanical")  # Preview mechanical tags only
+    # result = preview_duplicates_all_views()
+    # result = preview_duplicates_all_views("duct") # Preview duct tags only
+    result = preview_duplicates_all_views("pipe")  # Preview pipe tags only
+    # result = preview_duplicates_all_views("all_mep")  # Preview MEP tags only
+    # result = preview_duplicates_all_views("mechanical")  # Preview mechanical tags only
     
     # OPTION 14: List all available tag filters
-    # OUT = list_available_tag_filters()
+    # result = list_available_tag_filters()
+    
+    OUT = result
+    
+except Exception as e:
+    import traceback
+    OUT = {
+        "success": False,
+        "error": str(e),
+        "error_type": type(e).__name__,
+        "traceback": traceback.format_exc()
+    }
