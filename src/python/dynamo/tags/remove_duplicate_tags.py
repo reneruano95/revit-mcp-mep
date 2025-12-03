@@ -38,7 +38,7 @@ class DuplicateTagRemover:
         "duct_fitting": BuiltInCategory.OST_DuctFittingTags,
         "duct_accessory": BuiltInCategory.OST_DuctAccessoryTags,
         "duct_terminal": BuiltInCategory.OST_DuctTerminalTags,
-        "air_terminal": BuiltInCategory.OST_AirTerminalTags,
+        "air_terminal": BuiltInCategory.OST_DuctTerminalTags,  # Alias for duct_terminal
         # MEP - Electrical
         "electrical_equipment": BuiltInCategory.OST_ElectricalEquipmentTags,
         "electrical_fixture": BuiltInCategory.OST_ElectricalFixtureTags,
@@ -74,13 +74,13 @@ class DuplicateTagRemover:
     TAG_GROUPS = {
         "all_mep": [
             "mechanical_equipment", "duct", "duct_fitting", "duct_accessory",
-            "duct_terminal", "air_terminal", "electrical_equipment",
+            "duct_terminal", "electrical_equipment",
             "electrical_fixture", "lighting_fixture", "cable_tray", "conduit",
             "plumbing_fixture", "pipe", "pipe_fitting", "pipe_accessory", "sprinkler",
         ],
         "mechanical": [
             "mechanical_equipment", "duct", "duct_fitting", "duct_accessory",
-            "duct_terminal", "air_terminal",
+            "duct_terminal",
         ],
         "electrical": [
             "electrical_equipment", "electrical_fixture", "lighting_fixture",
