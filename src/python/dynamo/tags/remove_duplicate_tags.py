@@ -1104,7 +1104,7 @@ try:
     # OPTION 13: Preview duplicates in all views
     # result = preview_duplicates_all_views()
     # result = preview_duplicates_all_views("duct")  # Preview duct tags only
-    result = preview_duplicates_all_views("pipe")  # Preview pipe tags only
+    # result = preview_duplicates_all_views("pipe")  # Preview pipe tags only
     # result = preview_duplicates_all_views("all_mep")  # Preview MEP tags only
     # result = preview_duplicates_all_views("mechanical")  # Preview mechanical tags only
     
@@ -1157,6 +1157,7 @@ try:
     
     # OPTION 21: Full filter control
     # result = preview_duplicates_filtered(tag_filter="pipe", on_sheets_only=True, discipline="plumbing")
+    result = preview_duplicates_filtered(tag_filter="pipe", on_sheets_only=True, discipline="mechanical")
     # result = remove_duplicates_filtered(tag_filter="duct", on_sheets_only=True, discipline="mechanical")
     # result = preview_duplicates_filtered(on_sheets_only=True)  # All tags, views on sheets only
     # result = preview_duplicates_filtered(discipline="electrical")  # All tags, electrical views only
