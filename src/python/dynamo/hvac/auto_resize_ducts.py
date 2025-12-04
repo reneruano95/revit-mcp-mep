@@ -219,6 +219,24 @@ def calculate_equiv_round_velocity(cfm, equiv_diameter_in):
     return cfm / area_ft2
 
 
+def get_cfm_values(duct, scale_factor):
+    """Return (current_cfm, new_cfm) using duct flow when available.
+
+    Falls back to the configured constants if the duct has no readable flow.
+    """
+    try:
+        flow_param = duct.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
+        if flow_param and flow_param.StorageType == StorageType.Double:
+            current_cfm = flow_param.AsDouble()
+            if current_cfm > 0:
+                return current_cfm, current_cfm * scale_factor
+    except:
+        pass
+
+    # Fallback to configured constants
+    return OLD_CFM, NEW_CFM
+
+
 # =============================================================================
 # EQUAL FRICTION METHOD HELPER FUNCTIONS
 # =============================================================================
@@ -764,9 +782,8 @@ def resize_duct_commercial(duct, scale_factor):
 
     result["old_dims"] = f'{width_in:.0f}×{height_in:.0f}"'
 
-    # Use constant CFM values supplied by user
-    current_cfm = OLD_CFM
-    new_cfm = NEW_CFM
+    # Use duct flow if available; otherwise fall back to configured constants
+    current_cfm, new_cfm = get_cfm_values(duct, scale_factor)
 
     # Determine duct type and velocity limit
     duct_type = get_duct_type(duct)
@@ -841,9 +858,8 @@ def resize_duct_apartment(duct, scale_factor):
 
     result["old_dims"] = f'{current_width_in:.0f}×{height_in:.0f}"'
 
-    # Use constant CFM values supplied by user
-    current_cfm = OLD_CFM
-    new_cfm = NEW_CFM
+    # Use duct flow if available; otherwise fall back to configured constants
+    current_cfm, new_cfm = get_cfm_values(duct, scale_factor)
     
     # Store CFM values for debugging
     result["current_cfm"] = round(current_cfm, 0)
@@ -962,9 +978,8 @@ def resize_duct_equal_friction_commercial(duct, scale_factor):
 
     result["old_dims"] = f'{width_in:.0f}×{height_in:.0f}"'
 
-    # Use constant CFM values supplied by user
-    current_cfm = OLD_CFM
-    new_cfm = NEW_CFM
+    # Use duct flow if available; otherwise fall back to configured constants
+    current_cfm, new_cfm = get_cfm_values(duct, scale_factor)
 
     # Determine duct type
     duct_type = get_duct_type(duct)
@@ -1062,9 +1077,8 @@ def resize_duct_equal_friction_apartment(duct, scale_factor):
 
     result["old_dims"] = f'{current_width_in:.0f}×{height_in:.0f}"'
 
-    # Use constant CFM values supplied by user
-    current_cfm = OLD_CFM
-    new_cfm = NEW_CFM
+    # Use duct flow if available; otherwise fall back to configured constants
+    current_cfm, new_cfm = get_cfm_values(duct, scale_factor)
     
     # Store CFM values for debugging
     result["current_cfm"] = round(current_cfm, 0)
