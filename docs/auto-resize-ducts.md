@@ -222,6 +222,72 @@ def get_current_system_cfm(
     return (0.0, "not_found")
 ```
 
+#### Method 4: User Provides Both Values
+
+Simple approach where user explicitly provides old and new CFM values:
+
+```python
+def resize_ducts_with_user_values(
+    equipment_id: ElementId,
+    old_cfm: float,
+    new_cfm: float,
+    lock_dimension: str = "height"
+) -> Dict:
+    """
+    Resize ducts using user-provided CFM values.
+    Use when automatic detection is unreliable or user wants explicit control.
+
+    Args:
+        equipment_id: ElementId of mechanical equipment
+        old_cfm: Current CFM (user input)
+        new_cfm: Target CFM (user input)
+        lock_dimension: "height", "width", or "none"
+
+    Returns:
+        Dictionary with results summary
+    """
+    doc = DocumentManager.Instance.CurrentDBDocument
+
+    # Validate user inputs
+    if old_cfm <= 0 or new_cfm <= 0:
+        return {"error": "CFM values must be positive"}
+
+    scale_factor = new_cfm / old_cfm
+
+    print(f"User provided values:")
+    print(f"  Old CFM: {old_cfm}")
+    print(f"  New CFM: {new_cfm}")
+    print(f"  Scale factor: {scale_factor:.3f}")
+
+    # Get equipment and system
+    equipment = doc.GetElement(equipment_id)
+    system = get_supply_system(equipment)
+
+    if not system:
+        return {"error": "No connected system found"}
+
+    # Proceed with resize using the user-provided scale factor
+    # ... (rest of resize logic)
+
+    return {
+        "success": True,
+        "old_cfm": old_cfm,
+        "new_cfm": new_cfm,
+        "scale_factor": scale_factor,
+        "source": "user_input"
+    }
+
+
+# === DYNAMO INTERFACE FOR USER INPUT ===
+# Use this when you want explicit user control:
+
+# equipment_id = UnwrapElement(IN[0]).Id  # Equipment element
+# old_cfm = IN[1]                          # User enters: 800
+# new_cfm = IN[2]                          # User enters: 1000
+
+# OUT = resize_ducts_with_user_values(equipment_id, old_cfm, new_cfm)
+```
+
 #### CFM Source Comparison
 
 | Method                  | Pros                                   | Cons                                   |
@@ -229,7 +295,7 @@ def get_current_system_cfm(
 | **Terminal Sum**        | Always accurate, reflects actual model | Requires terminals to have Flow values |
 | **Equipment Parameter** | Direct from source, single read        | Parameter name varies by family        |
 | **Trunk Duct Flow**     | Quick single value                     | May not include all branches           |
-| **User Input**          | Explicit control                       | User might enter wrong value           |
+| **User Input**          | Explicit control, works always         | User might enter wrong value           |
 
 ### 2. Equipment Change Detection
 
@@ -1039,6 +1105,29 @@ For residential apartments with single mechanical units serving multiple rooms, 
 | Single equipment serves all rooms  | Proportional scaling keeps balance |
 | Limited space for transitions      | Round to standard sizes            |
 | Noise sensitivity                  | Lower velocity limits              |
+
+### Step-by-Step Apartment Workflow
+
+```
+1. Select the mechanical unit (WSHP, mini-split, etc.)
+   └─ Get its new CFM value
+
+2. Identify the system type
+   └─ Supply or Return
+
+3. Lock ALL duct heights to current values
+   └─ Apartments rarely have height flexibility
+
+4. Scale terminal CFMs proportionally
+   └─ Each room keeps same % of total
+
+5. Resize ducts from trunk → branches → runouts
+   └─ Only width changes
+
+6. Validate velocities
+   └─ Branch ducts: max 6 m/s (1200 FPM)
+   └─ Runouts: max 4 m/s (800 FPM) for low noise
+```
 
 ### Typical Apartment Sizing Reference
 
