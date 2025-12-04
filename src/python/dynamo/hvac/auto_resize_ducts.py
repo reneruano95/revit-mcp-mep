@@ -2,8 +2,9 @@
 Auto-Resize Ducts on Equipment Capacity Change
 ===============================================
 This Dynamo script automatically resizes ducts when HVAC equipment capacity changes.
-It recalculates duct dimensions based on the new CFM requirements while maintaining
-velocity limits and using standard duct sizes.
+It recalculates duct dimensions based on the new CFM requirements using either:
+  - Velocity Method: Maintains velocity within specified limits
+  - Equal Friction Method: Maintains constant pressure drop per unit length
 
 Duct Selection Methods:
     - "direct":     IN[0] = Selected ducts directly (no equipment needed)
@@ -12,11 +13,16 @@ Duct Selection Methods:
     - "level":      IN[0] = Level element (all ducts on that level)
     - "all":        IN[0] = Not used (processes all ducts in project)
 
+Sizing Methods:
+    - "velocity":       Size ducts based on maximum velocity limits (FPM)
+    - "equal_friction": Size ducts based on friction rate (in. w.g. per 100 ft)
+
 Usage:
     1. Set DUCT_SELECTION_METHOD to your preferred method
-    2. Provide the old and new CFM values
-    3. Connect appropriate input to IN[0]
-    4. Run the script
+    2. Set SIZING_METHOD to "velocity" or "equal_friction"
+    3. Provide the old and new CFM values
+    4. Connect appropriate input to IN[0]
+    5. Run the script
 
 Apartment Mode:
     - Locks duct height (ceiling constraint)
@@ -73,10 +79,48 @@ OPERATING_MODE = "apartment"
 #   - "try_update":         Try to update fitting parameters if possible
 FITTING_UPDATE_MODE = "delete_and_recreate"
 
+# Sizing Method: "velocity" or "equal_friction"
+#   - "velocity":       Size ducts based on maximum velocity limits (traditional method)
+#   - "equal_friction": Size ducts based on constant friction rate (pressure drop method)
+SIZING_METHOD = "equal_friction"
+
+# =============================================================================
+# EQUAL FRICTION METHOD SETTINGS
+# =============================================================================
+
+# Target friction rate in inches of water gauge per 100 feet of duct
+# Typical values:
+#   - Low velocity systems: 0.05 - 0.08 in. w.g./100 ft
+#   - Medium velocity systems: 0.08 - 0.15 in. w.g./100 ft  
+#   - High velocity systems: 0.15 - 0.40 in. w.g./100 ft
+# Residential typically uses 0.08, commercial 0.08-0.10
+FRICTION_RATE = {
+    "commercial": 0.10,  # in. w.g. per 100 ft
+    "apartment": 0.08,   # in. w.g. per 100 ft (lower for noise control)
+}
+
+# Maximum velocity limits (used as upper bound even in equal friction method)
+# These prevent excessive noise even if friction allows higher velocity
+MAX_VELOCITY_LIMIT = {
+    "commercial": 2500,  # FPM absolute max
+    "apartment": 700,    # FPM absolute max for residential
+}
+
+# Air properties (standard conditions at 70°F, sea level)
+AIR_DENSITY = 0.075  # lb/ft³
+
+# Duct roughness factor for galvanized steel
+# Absolute roughness in feet (0.0003 ft = 0.0036 inches for galvanized)
+DUCT_ROUGHNESS = 0.0003  # feet
+
+# =============================================================================
+# VELOCITY METHOD SETTINGS
+# =============================================================================
+
 # Velocity limits in FPM (Feet Per Minute)
 VELOCITY_LIMITS = {
     "commercial": {"trunk": 1500, "branch": 1200, "runout": 800},
-    "apartment": {"trunk": 1200, "branch": 1000, "runout": 700},
+    "apartment": {"trunk": 700, "branch": 600, "runout": 500},
 }
 
 # Duct classification by size (cross-sectional area in sq inches)
@@ -164,6 +208,201 @@ def calculate_velocity(cfm, width_in, height_in):
     if area_ft2 <= 0:
         return 0
     return cfm / area_ft2
+
+
+# =============================================================================
+# EQUAL FRICTION METHOD HELPER FUNCTIONS
+# =============================================================================
+
+
+def calculate_equivalent_diameter(width_in, height_in):
+    """
+    Calculate the equivalent circular diameter for a rectangular duct.
+    
+    Uses the Huebscher equation:
+    De = 1.30 * (a*b)^0.625 / (a+b)^0.25
+    
+    Where:
+        a = width (inches)
+        b = height (inches)
+        De = equivalent diameter (inches)
+    
+    This gives the diameter of a round duct with the same friction loss
+    per unit length at the same airflow rate.
+    """
+    if width_in <= 0 or height_in <= 0:
+        return 0
+    
+    # Huebscher equation for equivalent diameter
+    numerator = (width_in * height_in) ** 0.625
+    denominator = (width_in + height_in) ** 0.25
+    de = 1.30 * numerator / denominator
+    
+    return de
+
+
+def calculate_friction_rate(cfm, diameter_in):
+    """
+    Calculate friction rate (pressure drop per 100 ft) for a given CFM and duct diameter.
+    
+    Uses the simplified Darcy-Weisbach equation for air in ducts:
+    ΔP/100ft = 0.109136 * Q^1.9 / D^5.02
+    
+    Where:
+        Q = airflow in CFM
+        D = duct diameter in inches
+        ΔP = pressure drop in inches of water gauge per 100 ft
+    
+    This is an approximation valid for standard air conditions and
+    typical duct roughness (galvanized steel).
+    """
+    if cfm <= 0 or diameter_in <= 0:
+        return 0
+    
+    # Simplified friction equation for air in ducts
+    # This empirical formula is widely used in HVAC industry
+    friction = 0.109136 * (cfm ** 1.9) / (diameter_in ** 5.02)
+    
+    return friction
+
+
+def calculate_diameter_for_friction(cfm, target_friction_rate):
+    """
+    Calculate required duct diameter for a given CFM and target friction rate.
+    
+    Rearranging the friction equation:
+    D = (0.109136 * Q^1.9 / ΔP)^(1/5.02)
+    
+    Args:
+        cfm: Airflow in cubic feet per minute
+        target_friction_rate: Target pressure drop in in. w.g. per 100 ft
+    
+    Returns:
+        Required equivalent diameter in inches
+    """
+    if cfm <= 0 or target_friction_rate <= 0:
+        return 0
+    
+    # Solve for diameter
+    diameter = (0.109136 * (cfm ** 1.9) / target_friction_rate) ** (1 / 5.02)
+    
+    return diameter
+
+
+def calculate_rectangular_dims_for_diameter(equiv_diameter_in, fixed_height_in=None, aspect_ratio_max=4.0):
+    """
+    Calculate rectangular duct dimensions for a given equivalent diameter.
+    
+    If fixed_height is provided (apartment mode), calculates width to achieve
+    the equivalent diameter. Otherwise, optimizes for reasonable aspect ratio.
+    
+    Args:
+        equiv_diameter_in: Required equivalent diameter in inches
+        fixed_height_in: If set, height is locked (apartment mode)
+        aspect_ratio_max: Maximum allowed aspect ratio (default 4:1)
+    
+    Returns:
+        tuple: (width_in, height_in)
+    """
+    if equiv_diameter_in <= 0:
+        return (MIN_DUCT_WIDTH, MIN_DUCT_HEIGHT)
+    
+    # Calculate required area from equivalent diameter
+    # For a round duct: Area = π * (D/2)²
+    target_area = 3.14159 * (equiv_diameter_in / 2) ** 2
+    
+    if fixed_height_in and fixed_height_in > 0:
+        # Apartment mode: height is locked, solve for width
+        # Using the Huebscher equation inverted is complex, so we use iteration
+        # Start with area-based estimate and refine
+        width_estimate = target_area / fixed_height_in
+        
+        # Refine using Newton-Raphson or simple iteration
+        for _ in range(10):  # Max 10 iterations
+            current_de = calculate_equivalent_diameter(width_estimate, fixed_height_in)
+            if abs(current_de - equiv_diameter_in) < 0.1:  # Close enough
+                break
+            # Adjust width proportionally
+            ratio = equiv_diameter_in / current_de if current_de > 0 else 1.5
+            # Use smaller adjustment factor to prevent runaway
+            width_estimate *= min(ratio ** 1.2, 2.0)
+            
+            # Safety limit: prevent extreme widths during iteration
+            if width_estimate > fixed_height_in * aspect_ratio_max * 2:
+                break
+        
+        width = max(MIN_DUCT_WIDTH, width_estimate)
+        
+        # CRITICAL: Enforce aspect ratio limit
+        # If width would create excessive aspect ratio, cap it
+        max_width = fixed_height_in * aspect_ratio_max
+        if width > max_width:
+            width = max_width
+        
+        return (width, fixed_height_in)
+    
+    else:
+        # Commercial mode: optimize both dimensions
+        # Start with square duct and adjust for aspect ratio
+        side = (target_area) ** 0.5
+        
+        # Round to standard sizes
+        width = round_to_standard(side)
+        height = round_to_standard(side)
+        
+        # Ensure minimum sizes
+        width = max(MIN_DUCT_WIDTH, width)
+        height = max(MIN_DUCT_HEIGHT, height)
+        
+        # Verify equivalent diameter is close
+        actual_de = calculate_equivalent_diameter(width, height)
+        
+        # If we need more area, increase both dimensions to maintain aspect ratio
+        while actual_de < equiv_diameter_in * 0.95:
+            # Increase the smaller dimension to maintain aspect ratio
+            if width <= height:
+                width += STANDARD_SIZE_INCREMENT
+            else:
+                height += STANDARD_SIZE_INCREMENT
+            actual_de = calculate_equivalent_diameter(width, height)
+            
+            # Enforce aspect ratio limit
+            aspect = max(width, height) / min(width, height) if min(width, height) > 0 else 1
+            if aspect > aspect_ratio_max:
+                # Increase the smaller dimension
+                if width < height:
+                    width += STANDARD_SIZE_INCREMENT
+                else:
+                    height += STANDARD_SIZE_INCREMENT
+            
+            # Prevent infinite loop
+            if width > 60 or height > 60:
+                break
+        
+        return (width, height)
+
+
+def calculate_pressure_drop(cfm, width_in, height_in, length_ft=100):
+    """
+    Calculate total pressure drop for a duct section.
+    
+    Args:
+        cfm: Airflow in CFM
+        width_in: Duct width in inches
+        height_in: Duct height in inches
+        length_ft: Duct length in feet (default 100 for friction rate)
+    
+    Returns:
+        Pressure drop in inches of water gauge
+    """
+    equiv_dia = calculate_equivalent_diameter(width_in, height_in)
+    if equiv_dia <= 0:
+        return 0
+    
+    friction_per_100ft = calculate_friction_rate(cfm, equiv_dia)
+    total_drop = friction_per_100ft * (length_ft / 100)
+    
+    return total_drop
 
 
 def get_connector_manager(element):
@@ -413,8 +652,7 @@ def get_terminal_cfm(terminal):
     """Get the CFM value from an air terminal."""
     flow_param = terminal.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
     if flow_param:
-        # Revit stores flow in ft³/s, convert to CFM
-        return flow_param.AsDouble() * 60
+        return flow_param.AsDouble()
     return 0
 
 
@@ -479,7 +717,7 @@ def resize_duct_commercial(duct, scale_factor):
     result["old_dims"] = f'{width_in:.0f}×{height_in:.0f}"'
 
     # Get current flow and calculate new flow
-    current_cfm = flow_param.AsDouble() * 60 if flow_param else 0
+    current_cfm = flow_param.AsDouble() if flow_param else 0
     new_cfm = current_cfm * scale_factor
 
     # Determine duct type and velocity limit
@@ -558,8 +796,12 @@ def resize_duct_apartment(duct, scale_factor):
     result["old_dims"] = f'{current_width_in:.0f}×{height_in:.0f}"'
 
     # Get current flow and calculate new flow
-    current_cfm = flow_param.AsDouble() * 60 if flow_param else 0
+    current_cfm = flow_param.AsDouble() if flow_param else 0
     new_cfm = current_cfm * scale_factor
+    
+    # Store CFM values for debugging
+    result["current_cfm"] = round(current_cfm, 0)
+    result["new_cfm"] = round(new_cfm, 0)
 
     # Determine duct type and velocity limit
     duct_type = get_duct_type(duct)
@@ -578,25 +820,311 @@ def resize_duct_apartment(duct, scale_factor):
     # Ensure minimum size
     new_width_in = max(MIN_DUCT_WIDTH, new_width_in)
 
-    result["new_dims"] = f'{new_width_in:.0f}×{height_in:.0f}"'
-
     # Calculate resulting velocity
     velocity = calculate_velocity(new_cfm, new_width_in, height_in)
+    
+    # Check velocity limits and try to fix if exceeded
+    if velocity > max_velocity:
+        # Calculate required width for acceptable velocity
+        required_area_ft2 = new_cfm / max_velocity
+        required_width = (required_area_ft2 * 144) / height_in
+        
+        # Check if achievable with 4:1 aspect ratio
+        max_width_for_aspect = height_in * 4.0
+        
+        if required_width > max_width_for_aspect:
+            # Cannot achieve target velocity - duct height too small
+            new_width_in = round_to_standard(max_width_for_aspect)
+            new_width_in = max(MIN_DUCT_WIDTH, new_width_in)
+            velocity = calculate_velocity(new_cfm, new_width_in, height_in)
+            
+            # Calculate what height would be needed
+            required_height = (required_area_ft2 * 144 / 4.0) ** 0.5
+            
+            result["warning"] = (
+                f"DUCT HEIGHT TOO SMALL: Velocity {velocity:.0f} FPM exceeds {max_velocity} FPM. "
+                f"Need {required_width:.0f}\" width or increase height to ~{required_height:.0f}\"."
+            )
+        else:
+            # Can fix by increasing width
+            new_width_in = round_to_standard(required_width)
+            new_width_in = max(MIN_DUCT_WIDTH, new_width_in)
+            velocity = calculate_velocity(new_cfm, new_width_in, height_in)
+            
+            # Only warn if still slightly over
+            if velocity > max_velocity * 1.05:
+                result["warning"] = f"Velocity {velocity:.0f} FPM slightly exceeds {max_velocity} FPM limit"
+
+    result["new_dims"] = f'{new_width_in:.0f}×{height_in:.0f}"'
     result["velocity_fpm"] = round(velocity, 0)
 
-    # Check velocity limits
-    if velocity > max_velocity:
-        result["warning"] = (
-            f"Velocity {velocity:.0f} FPM exceeds {max_velocity} FPM limit for residential"
-        )
-
-    # Check aspect ratio (shouldn't exceed 4:1 typically)
-    aspect_ratio = max(new_width_in, height_in) / min(new_width_in, height_in)
+    # Check aspect ratio
+    aspect_ratio = max(new_width_in, height_in) / min(new_width_in, height_in) if min(new_width_in, height_in) > 0 else 1
     if aspect_ratio > 4:
         if result["warning"]:
             result["warning"] += f"; Aspect ratio {aspect_ratio:.1f}:1 exceeds 4:1"
         else:
             result["warning"] = f"Aspect ratio {aspect_ratio:.1f}:1 exceeds 4:1"
+
+    # Apply new width (height stays the same)
+    if not width_param.IsReadOnly:
+        width_param.Set(new_width_in * INCHES_TO_FEET)
+
+    return result
+
+
+# =============================================================================
+# EQUAL FRICTION RESIZE FUNCTIONS
+# =============================================================================
+
+
+def resize_duct_equal_friction_commercial(duct, scale_factor):
+    """
+    Resize a duct for commercial applications using the equal friction method.
+    Both width and height can change to achieve target friction rate.
+    
+    The equal friction method sizes ducts to maintain a constant pressure drop
+    per unit length (typically 0.08-0.10 in. w.g. per 100 ft for commercial).
+    """
+    result = {
+        "id": str(duct.Id.IntegerValue),
+        "old_dims": "",
+        "new_dims": "",
+        "velocity_fpm": 0,
+        "friction_rate": 0,
+        "duct_type": "",
+        "sizing_method": "equal_friction",
+        "warning": None,
+    }
+
+    # Get current dimensions
+    height_param = duct.get_Parameter(BuiltInParameter.RBS_CURVE_HEIGHT_PARAM)
+    width_param = duct.get_Parameter(BuiltInParameter.RBS_CURVE_WIDTH_PARAM)
+    flow_param = duct.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
+
+    if not all([height_param, width_param]):
+        result["warning"] = (
+            f"Duct {duct.Id} missing dimension parameters (may be round duct)"
+        )
+        return result
+
+    # Get current values in inches
+    height_in = height_param.AsDouble() * FEET_TO_INCHES
+    width_in = width_param.AsDouble() * FEET_TO_INCHES
+
+    if height_in <= 0 or width_in <= 0:
+        result["warning"] = f"Duct {duct.Id} has zero dimensions"
+        return result
+
+    result["old_dims"] = f'{width_in:.0f}×{height_in:.0f}"'
+
+    # Get current flow and calculate new flow
+    current_cfm = flow_param.AsDouble() if flow_param else 0
+    new_cfm = current_cfm * scale_factor
+
+    # Determine duct type
+    duct_type = get_duct_type(duct)
+    result["duct_type"] = duct_type
+
+    # Get target friction rate for commercial
+    target_friction = FRICTION_RATE["commercial"]
+    
+    # Calculate required equivalent diameter for the target friction rate
+    required_equiv_dia = calculate_diameter_for_friction(new_cfm, target_friction)
+    
+    # Calculate rectangular dimensions to achieve this equivalent diameter
+    new_width, new_height = calculate_rectangular_dims_for_diameter(required_equiv_dia)
+    
+    # Round to standard sizes
+    new_height = round_to_standard(new_height)
+    new_width = round_to_standard(new_width)
+
+    # Ensure minimum sizes
+    new_height = max(MIN_DUCT_HEIGHT, new_height)
+    new_width = max(MIN_DUCT_WIDTH, new_width)
+
+    result["new_dims"] = f'{new_width:.0f}×{new_height:.0f}"'
+
+    # Calculate actual friction rate with the new dimensions
+    actual_equiv_dia = calculate_equivalent_diameter(new_width, new_height)
+    actual_friction = calculate_friction_rate(new_cfm, actual_equiv_dia)
+    result["friction_rate"] = round(actual_friction, 3)
+
+    # Calculate resulting velocity
+    velocity = calculate_velocity(new_cfm, new_width, new_height)
+    result["velocity_fpm"] = round(velocity, 0)
+
+    # Check velocity limits (even with equal friction, we have max velocity limits)
+    max_velocity = MAX_VELOCITY_LIMIT["commercial"]
+    if velocity > max_velocity:
+        result["warning"] = (
+            f"Velocity {velocity:.0f} FPM exceeds {max_velocity} FPM absolute limit"
+        )
+        # Increase duct size to reduce velocity
+        required_area_ft2 = new_cfm / max_velocity
+        required_area_in2 = required_area_ft2 * 144
+        # Increase both dimensions proportionally
+        current_area = new_width * new_height
+        scale_up = (required_area_in2 / current_area) ** 0.5
+        new_width = round_to_standard(new_width * scale_up)
+        new_height = round_to_standard(new_height * scale_up)
+        result["new_dims"] = f'{new_width:.0f}×{new_height:.0f}"'
+        result["warning"] += f" - upsized to {new_width:.0f}×{new_height:.0f}\""
+
+    # Apply new dimensions
+    if not height_param.IsReadOnly:
+        height_param.Set(new_height * INCHES_TO_FEET)
+    if not width_param.IsReadOnly:
+        width_param.Set(new_width * INCHES_TO_FEET)
+
+    return result
+
+
+def resize_duct_equal_friction_apartment(duct, scale_factor):
+    """
+    Resize a duct for apartment applications using the equal friction method.
+    Height is locked (ceiling constraint), only width changes.
+    
+    Uses lower friction rate for residential (0.08 in. w.g. per 100 ft typical)
+    to minimize noise.
+    """
+    result = {
+        "id": str(duct.Id.IntegerValue),
+        "old_dims": "",
+        "new_dims": "",
+        "velocity_fpm": 0,
+        "friction_rate": 0,
+        "duct_type": "",
+        "sizing_method": "equal_friction",
+        "warning": None,
+    }
+
+    # Get current dimensions
+    height_param = duct.get_Parameter(BuiltInParameter.RBS_CURVE_HEIGHT_PARAM)
+    width_param = duct.get_Parameter(BuiltInParameter.RBS_CURVE_WIDTH_PARAM)
+    flow_param = duct.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
+
+    if not all([height_param, width_param]):
+        result["warning"] = f"Duct {duct.Id} missing dimension parameters"
+        return result
+
+    # Get current values in inches
+    height_in = height_param.AsDouble() * FEET_TO_INCHES
+    current_width_in = width_param.AsDouble() * FEET_TO_INCHES
+
+    if height_in <= 0 or current_width_in <= 0:
+        result["warning"] = f"Duct {duct.Id} has zero dimensions"
+        return result
+
+    result["old_dims"] = f'{current_width_in:.0f}×{height_in:.0f}"'
+
+    # Get current flow and calculate new flow
+    current_cfm = flow_param.AsDouble() if flow_param else 0
+    new_cfm = current_cfm * scale_factor
+    
+    # Store CFM values for debugging
+    result["current_cfm"] = round(current_cfm, 0)
+    result["new_cfm"] = round(new_cfm, 0)
+
+    # Determine duct type
+    duct_type = get_duct_type(duct)
+    result["duct_type"] = duct_type
+
+    # Get target friction rate for apartment
+    target_friction = FRICTION_RATE["apartment"]
+    
+    # Calculate required equivalent diameter for the target friction rate
+    required_equiv_dia = calculate_diameter_for_friction(new_cfm, target_friction)
+    
+    # Calculate width to achieve this equivalent diameter with fixed height
+    # The function will cap width at 4:1 aspect ratio
+    new_width_in, _ = calculate_rectangular_dims_for_diameter(
+        required_equiv_dia, 
+        fixed_height_in=height_in,
+        aspect_ratio_max=4.0
+    )
+
+    # Round to standard size
+    new_width_in = round_to_standard(new_width_in)
+
+    # Ensure minimum size
+    new_width_in = max(MIN_DUCT_WIDTH, new_width_in)
+    
+    # Final aspect ratio check and cap
+    max_width_for_aspect = height_in * 4.0
+    aspect_ratio_exceeded = new_width_in > max_width_for_aspect
+    if aspect_ratio_exceeded:
+        new_width_in = round_to_standard(max_width_for_aspect)
+        new_width_in = max(MIN_DUCT_WIDTH, new_width_in)
+
+    result["new_dims"] = f'{new_width_in:.0f}×{height_in:.0f}"'
+
+    # Calculate actual friction rate with the new dimensions
+    actual_equiv_dia = calculate_equivalent_diameter(new_width_in, height_in)
+    actual_friction = calculate_friction_rate(new_cfm, actual_equiv_dia)
+    result["friction_rate"] = round(actual_friction, 3)
+
+    # Calculate resulting velocity
+    velocity = calculate_velocity(new_cfm, new_width_in, height_in)
+    result["velocity_fpm"] = round(velocity, 0)
+    
+    # Check velocity limits for apartment - THIS IS CRITICAL
+    max_velocity = MAX_VELOCITY_LIMIT["apartment"]
+    
+    if velocity > max_velocity:
+        # Calculate what width we actually need for acceptable velocity
+        required_area_ft2 = new_cfm / max_velocity
+        required_width_for_velocity = (required_area_ft2 * 144) / height_in
+        
+        # Check if it's physically possible with any aspect ratio
+        if required_width_for_velocity > height_in * 4.0:
+            # Cannot achieve target velocity with 4:1 aspect ratio
+            # Calculate what height would be needed
+            required_height = (required_area_ft2 * 144 / 4.0) ** 0.5  # For 4:1 aspect ratio
+            
+            # Use maximum possible width (4:1 aspect ratio)
+            new_width_in = round_to_standard(height_in * 4.0)
+            new_width_in = max(MIN_DUCT_WIDTH, new_width_in)
+            
+            # Recalculate actual velocity with capped width
+            velocity = calculate_velocity(new_cfm, new_width_in, height_in)
+            result["velocity_fpm"] = round(velocity, 0)
+            result["new_dims"] = f'{new_width_in:.0f}×{height_in:.0f}"'
+            
+            result["warning"] = (
+                f"DUCT HEIGHT TOO SMALL: Velocity {velocity:.0f} FPM exceeds {max_velocity} FPM limit. "
+                f"Need {required_width_for_velocity:.0f}\" width (or increase height to ~{required_height:.0f}\"). "
+                f"Max width at 4:1 aspect ratio is {new_width_in:.0f}\"."
+            )
+        else:
+            # Can achieve target velocity within aspect ratio
+            new_width_in = round_to_standard(required_width_for_velocity)
+            new_width_in = max(MIN_DUCT_WIDTH, new_width_in)
+            
+            velocity = calculate_velocity(new_cfm, new_width_in, height_in)
+            result["velocity_fpm"] = round(velocity, 0)
+            result["new_dims"] = f'{new_width_in:.0f}×{height_in:.0f}"'
+            
+            # Update friction rate for new size
+            actual_equiv_dia = calculate_equivalent_diameter(new_width_in, height_in)
+            actual_friction = calculate_friction_rate(new_cfm, actual_equiv_dia)
+            result["friction_rate"] = round(actual_friction, 3)
+            
+            if aspect_ratio_exceeded:
+                result["warning"] = (
+                    f"Upsized for velocity ({velocity:.0f} FPM). "
+                    f"Friction rate: {actual_friction:.3f} in.wg/100ft"
+                )
+    elif aspect_ratio_exceeded:
+        # Aspect ratio was capped but velocity is OK
+        result["warning"] = (
+            f"Aspect ratio capped at 4:1. "
+            f"Actual friction: {actual_friction:.3f} in.wg/100ft vs target {target_friction:.3f}"
+        )
+
+    # Final aspect ratio info
+    aspect_ratio = max(new_width_in, height_in) / min(new_width_in, height_in) if min(new_width_in, height_in) > 0 else 1
+    result["aspect_ratio"] = round(aspect_ratio, 1)
 
     # Apply new width (height stays the same)
     if not width_param.IsReadOnly:
@@ -629,15 +1157,14 @@ def update_terminal_cfm(
         if not flow_param or flow_param.IsReadOnly:
             continue
 
-        current_cfm = flow_param.AsDouble() * 60
+        current_cfm = flow_param.AsDouble()
 
         if distribution_method == "proportional":
             new_cfm = current_cfm * scale_factor
         else:  # equal
             new_cfm = current_cfm + equal_change
 
-        # Convert back to ft³/s for Revit
-        flow_param.Set(new_cfm / 60)
+        flow_param.Set(new_cfm)
 
         results.append(
             {
@@ -686,15 +1213,23 @@ if OLD_CFM <= 0:
 scale_factor = NEW_CFM / OLD_CFM
 print(f"Scale factor: {scale_factor:.3f} ({OLD_CFM} CFM -> {NEW_CFM} CFM)")
 print(f"Operating mode: {OPERATING_MODE}")
+print(f"Sizing method: {SIZING_METHOD}")
 print(f"Duct selection method: {DUCT_SELECTION_METHOD}")
+
+# Show friction rate if using equal friction method
+if SIZING_METHOD == "equal_friction":
+    friction_rate = FRICTION_RATE.get(OPERATING_MODE, 0.08)
+    print(f"Target friction rate: {friction_rate} in. w.g. per 100 ft")
 
 # Results storage
 all_results = {
     "selection_method": DUCT_SELECTION_METHOD,
     "operating_mode": OPERATING_MODE,
+    "sizing_method": SIZING_METHOD,
     "old_cfm": OLD_CFM,
     "new_cfm": NEW_CFM,
     "scale_factor": round(scale_factor, 3),
+    "friction_rate": FRICTION_RATE.get(OPERATING_MODE, 0.08) if SIZING_METHOD == "equal_friction" else None,
     "ducts_processed": 0,
     "ducts_resized": 0,
     "warnings": [],
@@ -793,11 +1328,19 @@ for duct in ducts_to_resize:
     if not duct:
         continue
 
-    # Resize based on operating mode
-    if OPERATING_MODE == "apartment":
-        duct_result = resize_duct_apartment(duct, scale_factor)
+    # Resize based on sizing method and operating mode
+    if SIZING_METHOD == "equal_friction":
+        # Equal friction method
+        if OPERATING_MODE == "apartment":
+            duct_result = resize_duct_equal_friction_apartment(duct, scale_factor)
+        else:
+            duct_result = resize_duct_equal_friction_commercial(duct, scale_factor)
     else:
-        duct_result = resize_duct_commercial(duct, scale_factor)
+        # Velocity method (default)
+        if OPERATING_MODE == "apartment":
+            duct_result = resize_duct_apartment(duct, scale_factor)
+        else:
+            duct_result = resize_duct_commercial(duct, scale_factor)
 
     # Add system name to result
     duct_result["system"] = get_duct_system_name(duct)
@@ -811,9 +1354,20 @@ for duct in ducts_to_resize:
     else:
         all_results["ducts_resized"] += 1
 
+    # Print output varies based on sizing method
+    if SIZING_METHOD == "equal_friction":
+        friction_info = f", {duct_result.get('friction_rate', 0):.3f} in.wg/100ft"
+    else:
+        friction_info = ""
+    
+    # Include CFM info in output
+    cfm_info = ""
+    if "current_cfm" in duct_result and "new_cfm" in duct_result:
+        cfm_info = f" [CFM: {duct_result['current_cfm']:.0f} -> {duct_result['new_cfm']:.0f}]"
+    
     print(
         f"  Duct {duct_result['id']}: {duct_result['old_dims']} -> {duct_result['new_dims']} "
-        f"({duct_result['duct_type']}, {duct_result['velocity_fpm']} FPM)"
+        f"({duct_result['duct_type']}, {duct_result['velocity_fpm']} FPM{friction_info}){cfm_info}"
     )
 
 # Regenerate the document to update fittings
@@ -836,9 +1390,9 @@ if DUCT_SELECTION_METHOD == "system" and FILTER_BY_SYSTEM_NAME:
                                 # Update terminal CFM
                                 flow_param = elem.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
                                 if flow_param and not flow_param.IsReadOnly:
-                                    current_cfm = flow_param.AsDouble() * 60
+                                    current_cfm = flow_param.AsDouble()
                                     new_cfm = current_cfm * scale_factor
-                                    flow_param.Set(new_cfm / 60)  # Convert back to ft³/s
+                                    flow_param.Set(new_cfm)
                                     terminals_updated.append({
                                         "id": str(elem.Id.IntegerValue),
                                         "old_cfm": round(current_cfm, 0),
@@ -864,9 +1418,9 @@ if not terminals_updated:
                                 terminal_ids_found.add(owner.Id.IntegerValue)
                                 flow_param = owner.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
                                 if flow_param and not flow_param.IsReadOnly:
-                                    current_cfm = flow_param.AsDouble() * 60
+                                    current_cfm = flow_param.AsDouble()
                                     new_cfm = current_cfm * scale_factor
-                                    flow_param.Set(new_cfm / 60)
+                                    flow_param.Set(new_cfm)
                                     terminals_updated.append({
                                         "id": str(owner.Id.IntegerValue),
                                         "old_cfm": round(current_cfm, 0),
@@ -1454,6 +2008,9 @@ print("RESIZE SUMMARY")
 print("=" * 50)
 print(f"Selection method: {DUCT_SELECTION_METHOD}")
 print(f"Operating mode: {OPERATING_MODE}")
+print(f"Sizing method: {SIZING_METHOD}")
+if SIZING_METHOD == "equal_friction":
+    print(f"Target friction rate: {FRICTION_RATE.get(OPERATING_MODE, 0.08)} in. w.g./100 ft")
 print(f"Fitting update mode: {FITTING_UPDATE_MODE}")
 print(f"CFM change: {OLD_CFM} -> {NEW_CFM} (scale: {scale_factor:.3f})")
 print(f"Ducts processed: {all_results['ducts_processed']}")
