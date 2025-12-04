@@ -1,4 +1,3 @@
-````markdown
 # Auto-Resize Ducts on Equipment Capacity Change
 
 ## Overview
@@ -104,7 +103,135 @@ class DuctDimensionLock:
 
 ## Implementation Approach
 
-### 1. Equipment Change Detection
+### 1. Determining Current Equipment CFM
+
+The script needs to know the current/old CFM to calculate scale factors. There are multiple approaches:
+
+#### Method 1: Sum Terminal Flows (Recommended)
+
+Read the current state directly from the model — the sum of all terminal CFMs equals equipment output:
+
+```python
+def get_current_cfm_from_terminals(doc: Document, system: MechanicalSystem) -> float:
+    """
+    Get current total CFM by summing all terminal flows in the system.
+    This is the most reliable method as it reflects actual model state.
+
+    Args:
+        doc: Revit Document
+        system: MEP MechanicalSystem
+
+    Returns:
+        Total CFM from all terminals
+    """
+    total_cfm = 0.0
+
+    for element_id in system.Elements:
+        element = doc.GetElement(element_id)
+
+        # Only count terminals (diffusers, grilles)
+        if element.Category.Id.IntegerValue == int(BuiltInCategory.OST_DuctTerminal):
+            flow_param = element.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
+            if flow_param and flow_param.HasValue:
+                total_cfm += flow_param.AsDouble() * 60  # ft³/s to CFM
+
+    return total_cfm
+```
+
+#### Method 2: Read Equipment Parameter
+
+Get the CFM directly from the mechanical equipment's airflow parameter:
+
+```python
+def get_equipment_cfm(equipment: FamilyInstance) -> Optional[float]:
+    """
+    Get current CFM from mechanical equipment parameter.
+    Tries multiple common parameter names.
+
+    Args:
+        equipment: The mechanical equipment family instance
+
+    Returns:
+        CFM value or None if not found
+    """
+    # Try built-in flow parameter first
+    flow_param = equipment.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
+
+    # Try common shared/family parameter names
+    if not flow_param or not flow_param.HasValue:
+        param_names = [
+            "Airflow", "Air Flow", "CFM",
+            "Supply Air Flow", "Supply Airflow",
+            "Total Airflow", "Nominal Airflow",
+            "Cooling Airflow", "Heating Airflow"
+        ]
+        for name in param_names:
+            flow_param = equipment.LookupParameter(name)
+            if flow_param and flow_param.HasValue:
+                break
+
+    if flow_param and flow_param.HasValue:
+        value = flow_param.AsDouble()
+        # If value < 50, it's likely in ft³/s, convert to CFM
+        if value < 50:
+            return value * 60
+        return value
+
+    return None
+```
+
+#### Method 3: Combined Approach (Most Robust)
+
+Use equipment parameter as primary, fall back to terminal sum:
+
+```python
+def get_current_system_cfm(
+    doc: Document,
+    equipment: FamilyInstance,
+    system: MechanicalSystem
+) -> Tuple[float, str]:
+    """
+    Get current CFM using best available method.
+
+    Args:
+        doc: Revit Document
+        equipment: The mechanical equipment
+        system: Connected MEP system
+
+    Returns:
+        Tuple of (cfm_value, source_method)
+    """
+    # Try equipment parameter first
+    equipment_cfm = get_equipment_cfm(equipment)
+    if equipment_cfm and equipment_cfm > 0:
+        return (equipment_cfm, "equipment_parameter")
+
+    # Fall back to terminal sum
+    terminal_cfm = get_current_cfm_from_terminals(doc, system)
+    if terminal_cfm > 0:
+        return (terminal_cfm, "terminal_sum")
+
+    # Last resort: try to read from trunk duct
+    for elem_id in system.Elements:
+        elem = doc.GetElement(elem_id)
+        if isinstance(elem, Duct):
+            flow_param = elem.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
+            if flow_param and flow_param.HasValue:
+                return (flow_param.AsDouble() * 60, "trunk_duct")
+
+    return (0.0, "not_found")
+```
+
+#### CFM Source Comparison
+
+| Method                  | Pros                                   | Cons                                   |
+| ----------------------- | -------------------------------------- | -------------------------------------- |
+| **Terminal Sum**        | Always accurate, reflects actual model | Requires terminals to have Flow values |
+| **Equipment Parameter** | Direct from source, single read        | Parameter name varies by family        |
+| **Trunk Duct Flow**     | Quick single value                     | May not include all branches           |
+| **User Input**          | Explicit control                       | User might enter wrong value           |
+
+### 2. Equipment Change Detection
 
 ```python
 @dataclass
@@ -128,7 +255,7 @@ When equipment parameters are updated, the system should:
 2. Identify all connected duct systems via MEP connectors
 3. Trigger auto-resize calculation (with user confirmation or auto-apply based on settings)
 
-### 2. Duct Network Traversal
+### 3. Duct Network Traversal
 
 ```python
 import clr
@@ -898,4 +1025,359 @@ class TerminalValidator:
 - **Change Impact Analysis** — Show downstream effects on system balance and pressure
 - **Terminal Sizing Suggestions** — Recommend terminal upgrades when CFM exceeds capacity
 - **Noise Level Prediction** — Calculate NC ratings based on new terminal velocities
-````
+
+## Apartment-Specific Workflow
+
+For residential apartments with single mechanical units serving multiple rooms, use this optimized approach.
+
+### Recommended Strategy for Apartments
+
+| Apartment Constraint               | Solution                           |
+| ---------------------------------- | ---------------------------------- |
+| Fixed ceiling heights              | Lock duct height, vary width only  |
+| Pre-coordinated diffuser locations | Preserve terminal positions        |
+| Single equipment serves all rooms  | Proportional scaling keeps balance |
+| Limited space for transitions      | Round to standard sizes            |
+| Noise sensitivity                  | Lower velocity limits              |
+
+### Typical Apartment Sizing Reference
+
+| Apartment Size | Typical Tons | Typical CFM | Common Trunk Size |
+| -------------- | ------------ | ----------- | ----------------- |
+| Studio/1BR     | 1.0 - 1.5    | 400 - 600   | 250×200 mm        |
+| 2BR            | 1.5 - 2.0    | 600 - 800   | 300×200 mm        |
+| 3BR            | 2.0 - 2.5    | 800 - 1000  | 350×250 mm        |
+| Large 3BR+     | 2.5 - 3.0    | 1000 - 1200 | 400×250 mm        |
+
+### Apartment Auto-Resize Script
+
+Complete script optimized for apartment/residential use:
+
+```python
+"""
+Auto-resize ducts for apartment unit.
+Optimized for residential with height-locked approach.
+
+For use with Dynamo Python Script node.
+"""
+
+import clr
+clr.AddReference('RevitAPI')
+clr.AddReference('RevitServices')
+from Autodesk.Revit.DB import *
+from Autodesk.Revit.DB.Mechanical import *
+from RevitServices.Persistence import DocumentManager
+from RevitServices.Transactions import TransactionManager
+from typing import List, Dict, Tuple, Optional
+
+# === CONSTANTS ===
+FEET_TO_MM = 304.8
+MM_TO_FEET = 0.00328084
+
+# Lower velocity limits for residential (noise consideration)
+MAX_TRUNK_VELOCITY_MS = 6.0    # m/s
+MAX_BRANCH_VELOCITY_MS = 5.0   # m/s
+MAX_RUNOUT_VELOCITY_MS = 3.5   # m/s
+
+STANDARD_SIZE_INCREMENT = 50   # mm
+
+
+def resize_apartment_ducts(
+    equipment_id: ElementId,
+    new_cfm: float,
+    old_cfm: float = None
+) -> Dict:
+    """
+    Resize all ducts connected to apartment equipment.
+    Uses height-locked approach suitable for residential.
+
+    Args:
+        equipment_id: ElementId of mechanical equipment
+        new_cfm: Target CFM after resize
+        old_cfm: Optional current CFM. If None, reads from model.
+
+    Returns:
+        Dictionary with results summary
+    """
+    doc = DocumentManager.Instance.CurrentDBDocument
+    results = {
+        "success": False,
+        "old_cfm": 0,
+        "new_cfm": new_cfm,
+        "scale_factor": 0,
+        "terminals_updated": [],
+        "ducts_resized": [],
+        "warnings": []
+    }
+
+    # Get equipment and connected system
+    equipment = doc.GetElement(equipment_id)
+    system = get_supply_system(equipment)
+
+    if not system:
+        results["warnings"].append("No supply system found connected to equipment")
+        return results
+
+    # Collect ducts and terminals from system
+    ducts = []
+    terminals = []
+
+    for elem_id in system.Elements:
+        elem = doc.GetElement(elem_id)
+        cat_id = elem.Category.Id.IntegerValue
+
+        if cat_id == int(BuiltInCategory.OST_DuctCurves):
+            ducts.append(elem)
+        elif cat_id == int(BuiltInCategory.OST_DuctTerminal):
+            terminals.append(elem)
+
+    # Determine old CFM if not provided
+    if old_cfm is None or old_cfm <= 0:
+        # Method 1: Try equipment parameter
+        old_cfm = get_equipment_cfm(equipment)
+
+        # Method 2: Fall back to terminal sum
+        if old_cfm is None or old_cfm <= 0:
+            old_cfm = sum(get_terminal_cfm(t) for t in terminals)
+
+    if old_cfm <= 0:
+        results["warnings"].append("Could not determine current CFM from model")
+        return results
+
+    results["old_cfm"] = old_cfm
+    scale_factor = new_cfm / old_cfm
+    results["scale_factor"] = scale_factor
+
+    # Start transaction
+    TransactionManager.Instance.EnsureInTransaction(doc)
+
+    try:
+        # 1. Update terminal CFMs (proportional scaling)
+        for terminal in terminals:
+            terminal_old_cfm = get_terminal_cfm(terminal)
+            terminal_new_cfm = terminal_old_cfm * scale_factor
+
+            set_terminal_cfm(terminal, terminal_new_cfm)
+
+            results["terminals_updated"].append({
+                "id": str(terminal.Id.IntegerValue),
+                "old_cfm": round(terminal_old_cfm, 1),
+                "new_cfm": round(terminal_new_cfm, 1)
+            })
+
+        # 2. Resize ducts (height locked, adjust width only)
+        for duct in ducts:
+            duct_result = resize_single_duct(duct, scale_factor)
+            results["ducts_resized"].append(duct_result)
+
+            if duct_result.get("warning"):
+                results["warnings"].append(duct_result["warning"])
+
+        TransactionManager.Instance.TransactionTaskDone()
+        results["success"] = True
+
+    except Exception as e:
+        results["warnings"].append(f"Error during resize: {str(e)}")
+        TransactionManager.Instance.ForceCloseTransaction()
+
+    return results
+
+
+def resize_single_duct(duct: Duct, scale_factor: float) -> Dict:
+    """
+    Resize a single duct segment with height locked.
+
+    Args:
+        duct: The duct element
+        scale_factor: CFM scale factor (new/old)
+
+    Returns:
+        Dictionary with duct resize details
+    """
+    result = {
+        "id": str(duct.Id.IntegerValue),
+        "old_dims": "",
+        "new_dims": "",
+        "velocity_ms": 0,
+        "warning": None
+    }
+
+    # Get current dimensions
+    height_param = duct.get_Parameter(BuiltInParameter.RBS_CURVE_HEIGHT_PARAM)
+    width_param = duct.get_Parameter(BuiltInParameter.RBS_CURVE_WIDTH_PARAM)
+    flow_param = duct.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
+
+    if not all([height_param, width_param]):
+        result["warning"] = f"Duct {duct.Id} missing dimension parameters"
+        return result
+
+    height_mm = height_param.AsDouble() * FEET_TO_MM
+    current_width_mm = width_param.AsDouble() * FEET_TO_MM
+
+    # Get current flow and scale it
+    current_cfm = flow_param.AsDouble() * 60 if flow_param else 0
+    new_cfm = current_cfm * scale_factor
+
+    result["old_dims"] = f"{current_width_mm:.0f}×{height_mm:.0f}"
+
+    # Calculate new width (height stays locked)
+    new_width_mm = calculate_width_for_cfm(new_cfm, height_mm, MAX_BRANCH_VELOCITY_MS)
+
+    # Round to standard size
+    new_width_mm = round_to_standard(new_width_mm)
+
+    # Ensure minimum size
+    new_width_mm = max(100, new_width_mm)
+
+    result["new_dims"] = f"{new_width_mm:.0f}×{height_mm:.0f}"
+
+    # Calculate resulting velocity
+    area_m2 = (new_width_mm / 1000) * (height_mm / 1000)
+    flow_m3s = new_cfm * 0.000471947
+    velocity = flow_m3s / area_m2 if area_m2 > 0 else 0
+    result["velocity_ms"] = round(velocity, 2)
+
+    # Check velocity limits
+    if velocity > MAX_BRANCH_VELOCITY_MS:
+        result["warning"] = f"Duct {duct.Id} velocity {velocity:.1f} m/s exceeds {MAX_BRANCH_VELOCITY_MS} m/s limit"
+
+    # Apply new width
+    if not width_param.IsReadOnly:
+        width_param.Set(new_width_mm * MM_TO_FEET)
+
+    return result
+
+
+def get_supply_system(equipment: FamilyInstance) -> Optional[MechanicalSystem]:
+    """Get supply air system from equipment."""
+    try:
+        connectors = equipment.MEPModel.ConnectorManager.Connectors
+        for conn in connectors:
+            if conn.Direction == FlowDirectionType.Out and conn.MEPSystem:
+                return conn.MEPSystem
+    except:
+        pass
+    return None
+
+
+def get_equipment_cfm(equipment: FamilyInstance) -> Optional[float]:
+    """Get CFM from equipment parameter."""
+    param_names = [
+        "Airflow", "Air Flow", "CFM",
+        "Supply Air Flow", "Supply Airflow",
+        "Total Airflow", "Nominal Airflow"
+    ]
+
+    # Try built-in parameter
+    flow_param = equipment.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
+
+    # Try common parameter names
+    if not flow_param or not flow_param.HasValue:
+        for name in param_names:
+            flow_param = equipment.LookupParameter(name)
+            if flow_param and flow_param.HasValue:
+                break
+
+    if flow_param and flow_param.HasValue:
+        value = flow_param.AsDouble()
+        return value * 60 if value < 50 else value  # Convert if ft³/s
+
+    return None
+
+
+def get_terminal_cfm(terminal: FamilyInstance) -> float:
+    """Get terminal flow in CFM."""
+    param = terminal.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
+    return param.AsDouble() * 60 if param and param.HasValue else 0
+
+
+def set_terminal_cfm(terminal: FamilyInstance, cfm: float) -> None:
+    """Set terminal flow from CFM value."""
+    param = terminal.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)
+    if param and not param.IsReadOnly:
+        param.Set(cfm / 60)  # CFM to ft³/s
+
+
+def calculate_width_for_cfm(cfm: float, height_mm: float, max_velocity_ms: float) -> float:
+    """Calculate required width given locked height and velocity limit."""
+    flow_m3s = cfm * 0.000471947
+    height_m = height_mm / 1000
+    required_area_m2 = flow_m3s / max_velocity_ms
+    width_m = required_area_m2 / height_m if height_m > 0 else 0
+    return width_m * 1000
+
+
+def round_to_standard(dimension_mm: float, increment: float = 50) -> float:
+    """Round to nearest standard duct size."""
+    return round(dimension_mm / increment) * increment
+
+
+# === DYNAMO INTERFACE ===
+# Uncomment these lines when using in Dynamo:
+
+# equipment_id = UnwrapElement(IN[0]).Id  # Equipment element from Dynamo
+# new_cfm = IN[1]                          # New target CFM
+# old_cfm = IN[2] if len(IN) > 2 else None # Optional: current CFM
+
+# OUT = resize_apartment_ducts(equipment_id, new_cfm, old_cfm)
+```
+
+### Apartment Workflow Summary
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              Apartment Duct Resize Workflow                     │
+│                                                                 │
+│  1. Select mechanical unit (WSHP, FCU, mini-split)              │
+│     └─ Script reads current CFM from terminals or equipment     │
+│                          │                                      │
+│                          ▼                                      │
+│  2. User provides new target CFM                                │
+│     └─ Based on new equipment selection or load calc            │
+│                          │                                      │
+│                          ▼                                      │
+│  3. Calculate scale factor automatically                        │
+│     └─ scale = new_cfm / current_cfm                            │
+│                          │                                      │
+│                          ▼                                      │
+│  4. Scale all terminal CFMs proportionally                      │
+│     └─ Maintains room-to-room balance                           │
+│                          │                                      │
+│                          ▼                                      │
+│  5. Resize ducts with HEIGHT LOCKED                             │
+│     └─ Only width changes (apartment ceiling constraint)        │
+│     └─ Round to 50mm increments                                 │
+│                          │                                      │
+│                          ▼                                      │
+│  6. Validate velocities                                         │
+│     └─ Warn if > 5 m/s (noise in residential)                   │
+│                          │                                      │
+│                          ▼                                      │
+│  7. Return summary report                                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Recommended Settings for Apartments
+
+```python
+# Apartment-specific configuration
+APARTMENT_SETTINGS = {
+    "lock_dimension": "height",          # Always lock height in apartments
+    "sizing_method": "velocity",
+    "round_to_standard_sizes": True,
+    "standard_size_increment": 50,       # mm
+    "max_aspect_ratio": 4.0,
+
+    # Lower velocities for residential (noise)
+    "velocity_limits": {
+        "trunk": 6.0,    # m/s (vs 7.5 commercial)
+        "branch": 5.0,   # m/s (vs 6.0 commercial)
+        "runout": 3.5    # m/s (vs 4.0 commercial)
+    },
+
+    # Terminal distribution
+    "terminal_distribution": "proportional",
+    "min_terminal_cfm": 50,    # CFM
+    "max_terminal_cfm": 400    # CFM
+}
+```
