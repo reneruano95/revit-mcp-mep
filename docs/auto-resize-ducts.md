@@ -39,8 +39,8 @@ class DuctAutoResizeOptions:
 @dataclass
 class DuctDimensions:
     """Duct cross-section dimensions."""
-    width: float   # mm
-    height: float  # mm
+    width: float   # inches
+    height: float  # inches
 
 @dataclass
 class ResizedDuct:
@@ -48,8 +48,8 @@ class ResizedDuct:
     duct_id: ElementId
     previous_dimensions: DuctDimensions
     new_dimensions: DuctDimensions
-    new_velocity: float        # m/s
-    new_pressure_loss: float   # Pa
+    new_velocity: float        # FPM (feet per minute)
+    new_pressure_loss: float   # in. w.g. (inches water gauge)
 
 @dataclass
 class DuctAutoResizeResult:
@@ -78,7 +78,7 @@ class DuctDimensionLock:
     """Lock settings for a duct segment during auto-resize."""
     duct_id: ElementId
     locked_dimension: Literal["width", "height", "none"]
-    locked_value: Optional[float] = None  # mm, the fixed dimension value
+    locked_value: Optional[float] = None  # inches, the fixed dimension value
 ```
 
 ### Workflow
@@ -407,11 +407,11 @@ class DuctNetworkAnalyzer:
 class LockedDimensionSizer:
     """Calculates new duct dimensions respecting dimension locks."""
 
-    # Target velocities by sizing method (m/s)
+    # Target velocities by sizing method (FPM - feet per minute)
     VELOCITY_TARGETS = {
-        "velocity": {"trunk": 7.5, "branch": 6.0, "runout": 4.0},
-        "equal_friction": {"trunk": 6.0, "branch": 5.0, "runout": 3.5},
-        "static_regain": {"trunk": 8.0, "branch": 6.5, "runout": 4.5},
+        "velocity": {"trunk": 1500, "branch": 1200, "runout": 800},
+        "equal_friction": {"trunk": 1200, "branch": 1000, "runout": 700},
+        "static_regain": {"trunk": 1600, "branch": 1300, "runout": 900},
     }
 
     def calculate_new_dimensions(
@@ -437,41 +437,38 @@ class LockedDimensionSizer:
         """
         target_velocity = self.VELOCITY_TARGETS[sizing_method][duct_type]
 
-        # Convert CFM to m³/s for calculation
-        required_flow_m3s = required_cfm * 0.000471947
+        # Required area in ft² (CFM / FPM = ft²)
+        required_area_ft2 = required_cfm / target_velocity
 
-        # Required area in m²
-        required_area = required_flow_m3s / target_velocity
-
-        # Convert to mm² for dimension calculation
-        required_area_mm2 = required_area * 1_000_000
+        # Convert to in² for dimension calculation (1 ft² = 144 in²)
+        required_area_in2 = required_area_ft2 * 144
 
         if lock.locked_dimension == "height":
             # Height fixed, calculate new width
-            new_width = required_area_mm2 / lock.locked_value
+            new_width = required_area_in2 / lock.locked_value
             return DuctDimensions(width=new_width, height=lock.locked_value)
 
         elif lock.locked_dimension == "width":
             # Width fixed, calculate new height
-            new_height = required_area_mm2 / lock.locked_value
+            new_height = required_area_in2 / lock.locked_value
             return DuctDimensions(width=lock.locked_value, height=new_height)
 
         else:
             # No lock, optimize aspect ratio (target 2:1 or better)
-            return self._optimize_aspect_ratio(required_area_mm2)
+            return self._optimize_aspect_ratio(required_area_in2)
 
-    def _optimize_aspect_ratio(self, area_mm2: float, max_ratio: float = 4.0) -> DuctDimensions:
+    def _optimize_aspect_ratio(self, area_in2: float, max_ratio: float = 4.0) -> DuctDimensions:
         """Calculate dimensions with optimal aspect ratio."""
         import math
         # Start with square root for equal dimensions
-        side = math.sqrt(area_mm2)
-        # Round to standard increments (50mm)
+        side = math.sqrt(area_in2)
+        # Round to standard increments (2 inches)
         width = self._round_to_standard(side * 1.4)   # Wider
         height = self._round_to_standard(side * 0.7)  # Shorter
         return DuctDimensions(width=width, height=height)
 
-    def _round_to_standard(self, dimension: float, increment: float = 50.0) -> float:
-        """Round dimension to nearest standard size."""
+    def _round_to_standard(self, dimension: float, increment: float = 2.0) -> float:
+        """Round dimension to nearest standard size (2-inch increments)."""
         return round(dimension / increment) * increment
 ```
 
@@ -502,14 +499,14 @@ def update_duct_dimensions(doc: Document, duct: Duct, new_dims: DuctDimensions) 
     width_param = duct.get_Parameter(BuiltInParameter.RBS_CURVE_WIDTH_PARAM)
     height_param = duct.get_Parameter(BuiltInParameter.RBS_CURVE_HEIGHT_PARAM)
 
-    # Convert mm to feet for Revit API
-    MM_TO_FEET = 0.00328084
+    # Convert inches to feet for Revit API
+    INCHES_TO_FEET = 1/12  # 0.0833333
 
     if width_param and not width_param.IsReadOnly:
-        width_param.Set(new_dims.width * MM_TO_FEET)
+        width_param.Set(new_dims.width * INCHES_TO_FEET)
 
     if height_param and not height_param.IsReadOnly:
-        height_param.Set(new_dims.height * MM_TO_FEET)
+        height_param.Set(new_dims.height * INCHES_TO_FEET)
 ```
 
 ### 5. Main Auto-Resize Function
@@ -724,11 +721,11 @@ from typing import List, Tuple
 class DuctResizeValidator:
     """Validates duct resize operations."""
 
-    # Velocity limits (m/s)
-    MAX_VELOCITY = {"trunk": 10.0, "branch": 8.0, "runout": 6.0}
-    MIN_DIMENSION_MM = 100
+    # Velocity limits (FPM - feet per minute)
+    MAX_VELOCITY = {"trunk": 2000, "branch": 1600, "runout": 1200}
+    MIN_DIMENSION_IN = 4  # inches
     MAX_ASPECT_RATIO = 4.0
-    STANDARD_SIZES_MM = [100, 150, 200, 250, 300, 350, 400, 450, 500, 600, 700, 800]
+    STANDARD_SIZES_IN = [4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36]
 
     def validate_resize(self, result: DuctAutoResizeResult) -> List[Tuple[str, str, str]]:
         """
@@ -745,7 +742,7 @@ class DuctResizeValidator:
                 issues.append((
                     "DUCT_RESIZE_VELOCITY_CHECK",
                     "warning",
-                    f"Duct {duct.duct_id} velocity {duct.new_velocity:.1f} m/s exceeds limit"
+                    f"Duct {duct.duct_id} velocity {duct.new_velocity:.0f} FPM exceeds limit"
                 ))
 
             # Check aspect ratio
@@ -759,11 +756,11 @@ class DuctResizeValidator:
                 ))
 
             # Check minimum dimension
-            if dims.width < self.MIN_DIMENSION_MM or dims.height < self.MIN_DIMENSION_MM:
+            if dims.width < self.MIN_DIMENSION_IN or dims.height < self.MIN_DIMENSION_IN:
                 issues.append((
                     "DUCT_RESIZE_MIN_DIMENSION",
                     "error",
-                    f"Duct {duct.duct_id} dimension below minimum {self.MIN_DIMENSION_MM}mm"
+                    f"Duct {duct.duct_id} dimension below minimum {self.MIN_DIMENSION_IN} inches"
                 ))
 
             # Check standard sizes
@@ -778,7 +775,7 @@ class DuctResizeValidator:
 
     def _is_standard_size(self, dimension: float) -> bool:
         """Check if dimension matches a standard duct size."""
-        return any(abs(dimension - std) < 1 for std in self.STANDARD_SIZES_MM)
+        return any(abs(dimension - std) < 0.5 for std in self.STANDARD_SIZES_IN)
 ```
 
 ## Configuration Options
@@ -802,16 +799,16 @@ class AutoResizeSettings:
     # Round to standard duct sizes
     round_to_standard_sizes: bool = True
 
-    # Standard duct size increments (mm)
-    standard_size_increment: float = 50.0
+    # Standard duct size increments (inches)
+    standard_size_increment: float = 2.0
 
     # Maximum allowed aspect ratio
     max_aspect_ratio: float = 4.0
 
-    # Velocity limits by duct location (m/s)
-    velocity_limit_trunk: float = 7.5
-    velocity_limit_branch: float = 6.0
-    velocity_limit_runout: float = 4.0
+    # Velocity limits by duct location (FPM)
+    velocity_limit_trunk: float = 1500
+    velocity_limit_branch: float = 1200
+    velocity_limit_runout: float = 800
 
 # Example usage with JSON configuration file
 import json
@@ -1125,18 +1122,18 @@ For residential apartments with single mechanical units serving multiple rooms, 
    └─ Only width changes
 
 6. Validate velocities
-   └─ Branch ducts: max 6 m/s (1200 FPM)
-   └─ Runouts: max 4 m/s (800 FPM) for low noise
+   └─ Branch ducts: max 1200 FPM (6 m/s)
+   └─ Runouts: max 800 FPM (4 m/s) for low noise
 ```
 
 ### Typical Apartment Sizing Reference
 
 | Apartment Size | Typical Tons | Typical CFM | Common Trunk Size |
 | -------------- | ------------ | ----------- | ----------------- |
-| Studio/1BR     | 1.0 - 1.5    | 400 - 600   | 250×200 mm        |
-| 2BR            | 1.5 - 2.0    | 600 - 800   | 300×200 mm        |
-| 3BR            | 2.0 - 2.5    | 800 - 1000  | 350×250 mm        |
-| Large 3BR+     | 2.5 - 3.0    | 1000 - 1200 | 400×250 mm        |
+| Studio/1BR     | 1.0 - 1.5    | 400 - 600   | 10×8"             |
+| 2BR            | 1.5 - 2.0    | 600 - 800   | 12×8"             |
+| 3BR            | 2.0 - 2.5    | 800 - 1000  | 14×10"            |
+| Large 3BR+     | 2.5 - 3.0    | 1000 - 1200 | 16×10"            |
 
 ### Apartment Auto-Resize Script
 
@@ -1160,15 +1157,15 @@ from RevitServices.Transactions import TransactionManager
 from typing import List, Dict, Tuple, Optional
 
 # === CONSTANTS ===
-FEET_TO_MM = 304.8
-MM_TO_FEET = 0.00328084
+INCHES_TO_FEET = 1/12  # 0.0833333
+FEET_TO_INCHES = 12
 
-# Lower velocity limits for residential (noise consideration)
-MAX_TRUNK_VELOCITY_MS = 6.0    # m/s
-MAX_BRANCH_VELOCITY_MS = 5.0   # m/s
-MAX_RUNOUT_VELOCITY_MS = 3.5   # m/s
+# Lower velocity limits for residential (noise consideration) - in FPM
+MAX_TRUNK_VELOCITY_FPM = 1200    # FPM (vs 1500 commercial)
+MAX_BRANCH_VELOCITY_FPM = 1000   # FPM (vs 1200 commercial)
+MAX_RUNOUT_VELOCITY_FPM = 700    # FPM (vs 800 commercial)
 
-STANDARD_SIZE_INCREMENT = 50   # mm
+STANDARD_SIZE_INCREMENT = 2   # inches
 
 
 def resize_apartment_ducts(
@@ -1287,7 +1284,7 @@ def resize_single_duct(duct: Duct, scale_factor: float) -> Dict:
         "id": str(duct.Id.IntegerValue),
         "old_dims": "",
         "new_dims": "",
-        "velocity_ms": 0,
+        "velocity_fpm": 0,
         "warning": None
     }
 
@@ -1300,39 +1297,38 @@ def resize_single_duct(duct: Duct, scale_factor: float) -> Dict:
         result["warning"] = f"Duct {duct.Id} missing dimension parameters"
         return result
 
-    height_mm = height_param.AsDouble() * FEET_TO_MM
-    current_width_mm = width_param.AsDouble() * FEET_TO_MM
+    height_in = height_param.AsDouble() * FEET_TO_INCHES
+    current_width_in = width_param.AsDouble() * FEET_TO_INCHES
 
     # Get current flow and scale it
     current_cfm = flow_param.AsDouble() * 60 if flow_param else 0
     new_cfm = current_cfm * scale_factor
 
-    result["old_dims"] = f"{current_width_mm:.0f}×{height_mm:.0f}"
+    result["old_dims"] = f"{current_width_in:.0f}×{height_in:.0f}\""
 
     # Calculate new width (height stays locked)
-    new_width_mm = calculate_width_for_cfm(new_cfm, height_mm, MAX_BRANCH_VELOCITY_MS)
+    new_width_in = calculate_width_for_cfm(new_cfm, height_in, MAX_BRANCH_VELOCITY_FPM)
 
-    # Round to standard size
-    new_width_mm = round_to_standard(new_width_mm)
+    # Round to standard size (2-inch increments)
+    new_width_in = round_to_standard(new_width_in)
 
     # Ensure minimum size
-    new_width_mm = max(100, new_width_mm)
+    new_width_in = max(4, new_width_in)
 
-    result["new_dims"] = f"{new_width_mm:.0f}×{height_mm:.0f}"
+    result["new_dims"] = f"{new_width_in:.0f}×{height_in:.0f}\""
 
-    # Calculate resulting velocity
-    area_m2 = (new_width_mm / 1000) * (height_mm / 1000)
-    flow_m3s = new_cfm * 0.000471947
-    velocity = flow_m3s / area_m2 if area_m2 > 0 else 0
-    result["velocity_ms"] = round(velocity, 2)
+    # Calculate resulting velocity in FPM
+    area_ft2 = (new_width_in / 12) * (height_in / 12)
+    velocity_fpm = new_cfm / area_ft2 if area_ft2 > 0 else 0
+    result["velocity_fpm"] = round(velocity_fpm, 0)
 
     # Check velocity limits
-    if velocity > MAX_BRANCH_VELOCITY_MS:
-        result["warning"] = f"Duct {duct.Id} velocity {velocity:.1f} m/s exceeds {MAX_BRANCH_VELOCITY_MS} m/s limit"
+    if velocity_fpm > MAX_BRANCH_VELOCITY_FPM:
+        result["warning"] = f"Duct {duct.Id} velocity {velocity_fpm:.0f} FPM exceeds {MAX_BRANCH_VELOCITY_FPM} FPM limit"
 
     # Apply new width
     if not width_param.IsReadOnly:
-        width_param.Set(new_width_mm * MM_TO_FEET)
+        width_param.Set(new_width_in * INCHES_TO_FEET)
 
     return result
 
@@ -1387,18 +1383,20 @@ def set_terminal_cfm(terminal: FamilyInstance, cfm: float) -> None:
         param.Set(cfm / 60)  # CFM to ft³/s
 
 
-def calculate_width_for_cfm(cfm: float, height_mm: float, max_velocity_ms: float) -> float:
-    """Calculate required width given locked height and velocity limit."""
-    flow_m3s = cfm * 0.000471947
-    height_m = height_mm / 1000
-    required_area_m2 = flow_m3s / max_velocity_ms
-    width_m = required_area_m2 / height_m if height_m > 0 else 0
-    return width_m * 1000
+def calculate_width_for_cfm(cfm: float, height_in: float, max_velocity_fpm: float) -> float:
+    """Calculate required width (inches) given locked height and velocity limit."""
+    # Required area in ft² = CFM / FPM
+    required_area_ft2 = cfm / max_velocity_fpm
+    # Convert to in² (1 ft² = 144 in²)
+    required_area_in2 = required_area_ft2 * 144
+    # Width = Area / Height
+    width_in = required_area_in2 / height_in if height_in > 0 else 0
+    return width_in
 
 
-def round_to_standard(dimension_mm: float, increment: float = 50) -> float:
-    """Round to nearest standard duct size."""
-    return round(dimension_mm / increment) * increment
+def round_to_standard(dimension_in: float, increment: float = 2) -> float:
+    """Round to nearest standard duct size (2-inch increments)."""
+    return round(dimension_in / increment) * increment
 
 
 # === DYNAMO INTERFACE ===
@@ -1435,11 +1433,11 @@ def round_to_standard(dimension_mm: float, increment: float = 50) -> float:
 │                          ▼                                      │
 │  5. Resize ducts with HEIGHT LOCKED                             │
 │     └─ Only width changes (apartment ceiling constraint)        │
-│     └─ Round to 50mm increments                                 │
+│     └─ Round to 2-inch increments                               │
 │                          │                                      │
 │                          ▼                                      │
 │  6. Validate velocities                                         │
-│     └─ Warn if > 5 m/s (noise in residential)                   │
+│     └─ Warn if > 1000 FPM (noise in residential)                │
 │                          │                                      │
 │                          ▼                                      │
 │  7. Return summary report                                       │
@@ -1454,14 +1452,14 @@ APARTMENT_SETTINGS = {
     "lock_dimension": "height",          # Always lock height in apartments
     "sizing_method": "velocity",
     "round_to_standard_sizes": True,
-    "standard_size_increment": 50,       # mm
+    "standard_size_increment": 2,        # inches
     "max_aspect_ratio": 4.0,
 
-    # Lower velocities for residential (noise)
+    # Lower velocities for residential (noise) - in FPM
     "velocity_limits": {
-        "trunk": 6.0,    # m/s (vs 7.5 commercial)
-        "branch": 5.0,   # m/s (vs 6.0 commercial)
-        "runout": 3.5    # m/s (vs 4.0 commercial)
+        "trunk": 1200,    # FPM (vs 1500 commercial)
+        "branch": 1000,   # FPM (vs 1200 commercial)
+        "runout": 700     # FPM (vs 800 commercial)
     },
 
     # Terminal distribution
