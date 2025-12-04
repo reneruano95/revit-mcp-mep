@@ -973,8 +973,12 @@ if FITTING_UPDATE_MODE == "delete_and_recreate":
             family_name = fitting_type.FamilyName if fitting_type and hasattr(fitting_type, "FamilyName") else "Unknown"
             type_id = fitting.GetTypeId()
             
-            # Determine if it's a transition (connects two different duct sizes)
-            is_transition = "transition" in family_name.lower() or "reducer" in family_name.lower()
+            # Determine fitting type by family name
+            family_lower = family_name.lower()
+            is_transition = "transition" in family_lower or "reducer" in family_lower
+            is_elbow = "elbow" in family_lower or "bend" in family_lower
+            is_tee = "tee" in family_lower or "wye" in family_lower or "takeoff" in family_lower
+            is_tap = "tap" in family_lower
             
             # Get connectors and connected ducts
             connected_ducts_info = []
@@ -998,14 +1002,34 @@ if FITTING_UPDATE_MODE == "delete_and_recreate":
                         except:
                             pass
             
+            # Determine if this fitting should be processed or skipped
+            # Taps should be LEFT ALONE - they connect to trunk ducts in complex ways
+            # Elbows and Tees need to be deleted and recreated to get new sizes
+            # Transitions need to be deleted and recreated
+            should_skip = is_tap  # Only skip taps
+            
+            # Determine if we can auto-recreate this fitting
+            # - Transitions: need 2 ducts, use NewTransitionFitting
+            # - Elbows: need 2 ducts at an angle, use NewElbowFitting  
+            # - Tees: need 3 ducts, use NewTeeFitting (complex, skip for now)
+            can_recreate_transition = is_transition and len(connected_ducts_info) >= 2
+            can_recreate_elbow = is_elbow and len(connected_ducts_info) >= 2
+            can_recreate = (can_recreate_transition or can_recreate_elbow) and not should_skip
+            
             fittings_to_recreate.append({
                 "fitting_id": fitting.Id,
                 "fitting_id_str": fitting_id,
                 "family_name": family_name,
                 "type_id": type_id,
                 "is_transition": is_transition,
+                "is_elbow": is_elbow,
+                "is_tee": is_tee,
+                "is_tap": is_tap,
+                "should_skip": should_skip,
                 "connected_ducts": connected_ducts_info,
-                "can_recreate": is_transition and len(connected_ducts_info) >= 2
+                "can_recreate": can_recreate,
+                "can_recreate_elbow": can_recreate_elbow if 'can_recreate_elbow' in dir() else False,
+                "can_recreate_transition": can_recreate_transition if 'can_recreate_transition' in dir() else False
             })
             
         except Exception as e:
@@ -1016,12 +1040,41 @@ if FITTING_UPDATE_MODE == "delete_and_recreate":
         fitting_id_str = fit_info["fitting_id_str"]
         family_name = fit_info["family_name"]
 
+        # Skip taps - they connect to trunk ducts in complex ways
+        if fit_info.get("should_skip", False) or fit_info.get("is_tap", False):
+            fittings_skipped.append({
+                "id": fitting_id_str,
+                "family": family_name,
+                "status": "preserved",
+                "reason": "tap fitting - requires manual handling"
+            })
+            print(
+                f"  Preserving tap {fitting_id_str} ({family_name}) - "
+                "requires manual handling"
+            )
+            continue
+        
+        # Skip tees for now - they have 3+ connections and are complex to recreate
+        if fit_info.get("is_tee", False):
+            fittings_skipped.append({
+                "id": fitting_id_str,
+                "family": family_name,
+                "status": "preserved", 
+                "reason": "tee fitting - complex recreation not yet supported"
+            })
+            print(
+                f"  Preserving tee {fitting_id_str} ({family_name}) - "
+                "complex recreation not yet supported"
+            )
+            continue
+        
+        # Skip fittings that can't be auto-recreated (non-transitions with complex connections)
         if not fit_info.get("can_recreate", False):
             fittings_skipped.append({
                 "id": fitting_id_str,
                 "family": family_name,
                 "status": "skipped",
-                "reason": "auto recreation not supported"
+                "reason": "auto recreation not supported - requires manual handling"
             })
             print(
                 f"  Skipping delete for fitting {fitting_id_str} ({family_name}) - "
@@ -1051,129 +1104,112 @@ if FITTING_UPDATE_MODE == "delete_and_recreate":
     for fit_info in fittings_to_recreate:
         if not fit_info.get("can_recreate", False):
             continue
-
-        if len(fit_info["connected_ducts"]) >= 2 and fit_info["is_transition"]:
-            try:
-                # Get the two ducts that were connected
-                duct1_id = fit_info["connected_ducts"][0]["duct_id"]
-                duct2_id = fit_info["connected_ducts"][1]["duct_id"]
-                
-                duct1 = doc.GetElement(duct1_id)
-                duct2 = doc.GetElement(duct2_id)
-                
-                if duct1 and duct2:
-                    # Find the open connectors on each duct
-                    conn1 = None
-                    conn2 = None
-                    
-                    for conn in duct1.ConnectorManager.Connectors:
-                        if not conn.IsConnected:
-                            conn1 = conn
-                            break
-                    
-                    for conn in duct2.ConnectorManager.Connectors:
-                        if not conn.IsConnected:
-                            conn2 = conn
-                            break
-                    
-                    if conn1 and conn2:
-                        # Create a new transition fitting between the two connectors
-                        try:
-                            new_fitting = doc.Create.NewTransitionFitting(conn1, conn2)
-                            if new_fitting:
-                                fittings_recreated.append({
-                                    "old_id": fit_info["fitting_id_str"],
-                                    "new_id": str(new_fitting.Id.IntegerValue),
-                                    "family": fit_info["family_name"],
-                                    "status": "recreated"
-                                })
-                                print(f"  Created new transition between ducts {duct1_id.IntegerValue} and {duct2_id.IntegerValue}")
-                        except Exception as e:
-                            # Try alternative method - NewElbowFitting or NewTeeFitting might work
-                            print(f"  Could not create transition automatically: {e}")
-                            fittings_recreated.append({
-                                "old_id": fit_info["fitting_id_str"],
-                                "new_id": "manual",
-                                "family": fit_info["family_name"],
-                                "status": "needs_manual_creation"
-                            })
-                    else:
-                        print(f"  Could not find open connectors for fitting {fit_info['fitting_id_str']}")
-                        fittings_recreated.append({
-                            "old_id": fit_info["fitting_id_str"],
-                            "new_id": "manual",
-                            "family": fit_info["family_name"],
-                            "status": "needs_manual_creation"
-                        })
-                        
-            except Exception as e:
-                print(f"  Error recreating fitting {fit_info['fitting_id_str']}: {e}")
+        
+        # Need at least 2 connected ducts to recreate any fitting
+        if len(fit_info["connected_ducts"]) < 2:
+            continue
+            
+        try:
+            # Get the two ducts that were connected
+            duct1_id = fit_info["connected_ducts"][0]["duct_id"]
+            duct2_id = fit_info["connected_ducts"][1]["duct_id"]
+            
+            duct1 = doc.GetElement(duct1_id)
+            duct2 = doc.GetElement(duct2_id)
+            
+            if not duct1 or not duct2:
+                print(f"  Could not find ducts for fitting {fit_info['fitting_id_str']}")
                 fittings_recreated.append({
                     "old_id": fit_info["fitting_id_str"],
-                    "new_id": "error",
+                    "new_id": "manual",
                     "family": fit_info["family_name"],
-                    "status": f"error: {e}"
+                    "status": "needs_manual_creation"
                 })
-        else:
-            # For non-transitions (elbows, tees), try to connect open connectors
-            if len(fit_info["connected_ducts"]) >= 1:
+                continue
+            
+            # Find the open connectors on each duct (closest to original connection points)
+            conn1 = find_connector_near_point(duct1, fit_info["connected_ducts"][0].get("connection_point"))
+            conn2 = find_connector_near_point(duct2, fit_info["connected_ducts"][1].get("connection_point"))
+            
+            if not conn1 or not conn2:
+                print(f"  Could not find open connectors for fitting {fit_info['fitting_id_str']}")
+                fittings_recreated.append({
+                    "old_id": fit_info["fitting_id_str"],
+                    "new_id": "manual",
+                    "family": fit_info["family_name"],
+                    "status": "needs_manual_creation"
+                })
+                continue
+            
+            new_fitting = None
+            fitting_type_created = ""
+            
+            # Try to create the appropriate fitting type
+            if fit_info.get("is_elbow", False):
+                # For elbows - try NewElbowFitting first
                 try:
-                    duct1_id = fit_info["connected_ducts"][0]["duct_id"]
-                    duct1 = doc.GetElement(duct1_id)
-                    
-                    if duct1 and len(fit_info["connected_ducts"]) >= 2:
-                        duct2_id = fit_info["connected_ducts"][1]["duct_id"]
-                        duct2 = doc.GetElement(duct2_id)
-                        
-                        # Find open connectors
-                        conn1 = None
-                        conn2 = None
-                        
-                        for conn in duct1.ConnectorManager.Connectors:
-                            if not conn.IsConnected:
-                                conn1 = conn
-                                break
-                        
-                        if duct2:
-                            for conn in duct2.ConnectorManager.Connectors:
-                                if not conn.IsConnected:
-                                    conn2 = conn
-                                    break
-                        
-                        if conn1 and conn2:
-                            try:
-                                # Try to create elbow fitting
-                                new_fitting = doc.Create.NewElbowFitting(conn1, conn2)
-                                if new_fitting:
-                                    fittings_recreated.append({
-                                        "old_id": fit_info["fitting_id_str"],
-                                        "new_id": str(new_fitting.Id.IntegerValue),
-                                        "family": fit_info["family_name"],
-                                        "status": "recreated"
-                                    })
-                                    print(f"  Created new elbow between ducts")
-                            except:
-                                # Try transition as fallback
-                                try:
-                                    new_fitting = doc.Create.NewTransitionFitting(conn1, conn2)
-                                    if new_fitting:
-                                        fittings_recreated.append({
-                                            "old_id": fit_info["fitting_id_str"],
-                                            "new_id": str(new_fitting.Id.IntegerValue),
-                                            "family": fit_info["family_name"],
-                                            "status": "recreated"
-                                        })
-                                        print(f"  Created new fitting between ducts")
-                                except Exception as e:
-                                    print(f"  Could not auto-create fitting: {e}")
-                                    fittings_recreated.append({
-                                        "old_id": fit_info["fitting_id_str"],
-                                        "new_id": "manual",
-                                        "family": fit_info["family_name"],
-                                        "status": "needs_manual_creation"
-                                    })
+                    new_fitting = doc.Create.NewElbowFitting(conn1, conn2)
+                    fitting_type_created = "elbow"
                 except Exception as e:
-                    print(f"  Error handling fitting {fit_info['fitting_id_str']}: {e}")
+                    print(f"    NewElbowFitting failed: {e}")
+                    # Fallback to transition if elbow fails (might be a reducing elbow situation)
+                    try:
+                        new_fitting = doc.Create.NewTransitionFitting(conn1, conn2)
+                        fitting_type_created = "transition (fallback)"
+                    except Exception as e2:
+                        print(f"    NewTransitionFitting fallback also failed: {e2}")
+                        
+            elif fit_info.get("is_transition", False):
+                # For transitions - use NewTransitionFitting
+                try:
+                    new_fitting = doc.Create.NewTransitionFitting(conn1, conn2)
+                    fitting_type_created = "transition"
+                except Exception as e:
+                    print(f"    NewTransitionFitting failed: {e}")
+                    # Try elbow as fallback (in case connectors are at angle)
+                    try:
+                        new_fitting = doc.Create.NewElbowFitting(conn1, conn2)
+                        fitting_type_created = "elbow (fallback)"
+                    except Exception as e2:
+                        print(f"    NewElbowFitting fallback also failed: {e2}")
+            else:
+                # Unknown fitting type - try both methods
+                try:
+                    new_fitting = doc.Create.NewTransitionFitting(conn1, conn2)
+                    fitting_type_created = "transition"
+                except:
+                    try:
+                        new_fitting = doc.Create.NewElbowFitting(conn1, conn2)
+                        fitting_type_created = "elbow"
+                    except:
+                        pass
+            
+            if new_fitting:
+                fittings_recreated.append({
+                    "old_id": fit_info["fitting_id_str"],
+                    "new_id": str(new_fitting.Id.IntegerValue),
+                    "family": fit_info["family_name"],
+                    "status": "recreated",
+                    "type_created": fitting_type_created
+                })
+                print(f"  Created new {fitting_type_created} fitting between ducts {duct1_id.IntegerValue} and {duct2_id.IntegerValue}")
+            else:
+                fittings_recreated.append({
+                    "old_id": fit_info["fitting_id_str"],
+                    "new_id": "manual",
+                    "family": fit_info["family_name"],
+                    "status": "needs_manual_creation"
+                })
+                print(f"  Could not auto-create fitting for {fit_info['fitting_id_str']} - manual creation needed")
+                
+        except Exception as e:
+            print(f"  Error recreating fitting {fit_info['fitting_id_str']}: {e}")
+            fittings_recreated.append({
+                "old_id": fit_info["fitting_id_str"],
+                "new_id": "error",
+                "family": fit_info["family_name"],
+                "status": f"error: {e}"
+            })
     
     doc.Regenerate()
     
